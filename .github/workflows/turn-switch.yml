@@ -1,0 +1,74 @@
+# =============================================================================
+# turn-switch.yml — 夜間バッチのオーケストレーター
+# -----------------------------------------------------------------------------
+# トリガー1 (push): 人間が就寝前に .nightly/tasks.yml を main にコミット
+#                   → 検証 → 統合ブランチ作成 → 第1ターンを Jules API で投入
+# トリガー2 (cron): 02:30 JST → T1のマージ状況を確認し、依存充足のT2のみ投入
+#                   (依存が欠けたタスクはスキップして記録: fail-closed)
+# =============================================================================
+name: nightly-turn-switch
+
+on:
+  push:
+    branches: [main]
+    paths: [".nightly/tasks.yml"]
+  schedule:
+    # GitHub Actions の cron は UTC。17:30 UTC = 02:30 JST(翌日)
+    # 注意: schedule の起動は数分〜数十分遅延しうる(T1に3時間まるごと必要なら
+    #       就寝前の投入時刻を早める側で余裕を持たせること)
+    - cron: "30 17 * * *"
+  workflow_dispatch:
+    inputs:
+      command:
+        description: "実行コマンド(手動リカバリ用)"
+        type: choice
+        options: [start-night, turn-switch, validate]
+        default: validate
+
+# 同時実行を1本に制限(二重起動による多重投入を防止)
+concurrency:
+  group: nightly-orchestrator
+  cancel-in-progress: false
+
+permissions:
+  contents: write        # 統合ブランチの作成とログのコミットに使用(mainには書かない)
+  pull-requests: read    # T1マージ状況の確認に使用
+
+jobs:
+  orchestrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
+      JULES_SOURCE_NAME: ${{ vars.JULES_SOURCE_NAME }}
+    steps:
+      - name: Checkout main (マニフェストの正本は常にmainから読む)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Install PyYAML
+        run: pip install --quiet pyyaml
+
+      - name: Determine command
+        id: cmd
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "command=start-night" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "command=turn-switch" >> "$GITHUB_OUTPUT"
+          else
+            echo "command=${{ inputs.command }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Guard secrets (未設定なら何も起動しない)
+        if: steps.cmd.outputs.command != 'validate'
+        run: |
+          if [ -z "$JULES_API_KEY" ] || [ -z "$JULES_SOURCE_NAME" ]; then
+            echo "::error::JULES_API_KEY(Secret) / JULES_SOURCE_NAME(Variable) が未設定です。fail-closedで終了します。"
+            exit 1
+          fi
+
+      - name: Run orchestrator
+        run: python3 .nightly/scripts/nightly.py ${{ steps.cmd.outputs.command }}

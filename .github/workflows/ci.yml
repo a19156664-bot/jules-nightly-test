@@ -1,0 +1,42 @@
+# =============================================================================
+# ci.yml — ブートストラップCI(言語非依存)
+# -----------------------------------------------------------------------------
+# 自動マージの必須チェックとして機能する。テスト未導入のプロジェクトでも
+# 初日からパイプラインを回せるよう、実体を .nightly/ci.sh に委譲する:
+#   - .nightly/ci.sh が存在する → それを実行(exit 0 で合格)
+#   - 存在しない → 警告付きで合格(ブートストラップモード)
+#
+# 導入初夜の推奨タスク: 「Julesに .nightly/ci.sh とテスト基盤を構築させる」
+# ci.sh が実体化した瞬間から、ゲートは本物のテストで守られるようになる。
+# ※ ジョブ名 "ci" はブランチ保護の必須チェック名として参照される。変更しないこと。
+# =============================================================================
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - "integration/nightly-**"
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run project CI
+        run: |
+          if [ -x ".nightly/ci.sh" ]; then
+            echo "Running .nightly/ci.sh ..."
+            ./.nightly/ci.sh
+          elif [ -f ".nightly/ci.sh" ]; then
+            echo "Running .nightly/ci.sh (via bash) ..."
+            bash .nightly/ci.sh
+          else
+            echo "::warning::.nightly/ci.sh が存在しません。ブートストラップモードで合格扱いにします。"
+            echo "::warning::初夜のタスクとして『テスト基盤の構築と .nightly/ci.sh の実体化』をJulesに依頼してください。"
+          fi
