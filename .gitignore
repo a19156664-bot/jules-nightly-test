@@ -1,0 +1,13 @@
+﻿# Secrets — must never be committed
+.env
+.env.*
+!.env.example
+
+# Editor/OS artifacts
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
