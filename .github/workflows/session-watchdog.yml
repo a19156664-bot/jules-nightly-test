@@ -1,0 +1,51 @@
+# =============================================================================
+# session-watchdog.yml — PR自動作成の安全網(夜間セッション監視)
+# -----------------------------------------------------------------------------
+# automationMode=AUTO_CREATE_PR により Jules は完了時にPRを自動公開するが、
+# FAILED や停滞(承認待ち/フィードバック待ち)で公開に至らない夜もありうる。
+# このワークフローは夜間に30分おきで各セッションの状態を記録し、翌朝レポートで
+# 「PRが出なかった原因」を可視化する。監視のみ・自動介入は一切しない(fail-closed)。
+# =============================================================================
+name: nightly-session-watchdog
+
+on:
+  schedule:
+    # GitHub Actions の cron は UTC。15:00〜20:30 UTC = 00:00〜05:30 JST の間、30分おき
+    - cron: "0,30 15-20 * * *"
+  workflow_dispatch: {}   # 手動リカバリ用(任意タイミングで状態を再記録)
+
+permissions:
+  contents: write        # 監視ログを統合ブランチへコミット(mainには書かない)
+  pull-requests: read
+
+# 同時実行を1本に制限(重複コミットを防止)
+concurrency:
+  group: nightly-session-watchdog
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
+      JULES_SOURCE_NAME: ${{ vars.JULES_SOURCE_NAME }}
+    steps:
+      - name: Checkout main (マニフェストの正本は常にmainから読む)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Install PyYAML
+        run: pip install --quiet pyyaml
+
+      - name: Guard secrets (未設定なら何も監視しない)
+        run: |
+          if [ -z "$JULES_API_KEY" ] || [ -z "$JULES_SOURCE_NAME" ]; then
+            echo "::error::JULES_API_KEY(Secret) / JULES_SOURCE_NAME(Variable) が未設定です。fail-closedで終了します。"
+            exit 1
+          fi
+
+      - name: Watch Jules sessions
+        run: python3 .nightly/scripts/nightly.py watch
