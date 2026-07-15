@@ -18,6 +18,7 @@ on:
 permissions:
   contents: write        # レポートを統合ブランチへコミット
   pull-requests: read
+  checks: read           # list_prs の statusCheckRollup 取得に必要
 
 concurrency:
   group: nightly-morning-report

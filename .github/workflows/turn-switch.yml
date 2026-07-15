@@ -33,6 +33,7 @@ concurrency:
 permissions:
   contents: write        # 統合ブランチの作成とログのコミットに使用(mainには書かない)
   pull-requests: read    # T1マージ状況の確認に使用
+  checks: read           # list_prs の statusCheckRollup 取得に必要
 
 jobs:
   orchestrate:
