@@ -253,16 +253,21 @@ def gh_get_json(branch: str, path: str):
         return None
 
 
-def list_prs(branch: str, state: str) -> list:
+def list_prs(branch: str, state: str, with_checks: bool = True) -> list:
+    """with_checks=False で statusCheckRollup を除外する。
+    同フィールドの取得には checks:read でも足りず(checkSuite.workflowRun が
+    Actions トークンから参照できない)、CI状態を使わない呼び出し元は False にする。"""
+    fields = ("number,title,state,url,author,additions,deletions,"
+              "mergedAt,isDraft")
+    if with_checks:
+        fields += ",statusCheckRollup"
     return gh_json(["pr", "list", "--repo", repo(), "--base", branch, "--state", state,
-                    "--limit", "100",
-                    "--json", "number,title,state,url,author,additions,deletions,"
-                              "mergedAt,isDraft,statusCheckRollup"]) or []
+                    "--limit", "100", "--json", fields]) or []
 
 
 def merged_task_ids(branch: str) -> set:
     ids = set()
-    for pr in list_prs(branch, "merged"):
+    for pr in list_prs(branch, "merged", with_checks=False):
         mt = TASK_ID_RE.match(pr["title"] or "")
         if mt:
             ids.add(mt.group(1))
