@@ -678,7 +678,7 @@ def cmd_report(_args) -> int:
             if isinstance(s, dict) and s.get("task"):
                 sessions_by_task[s["task"]] = s
 
-    prs = list_prs(branch, "all")
+    prs = list_prs(branch, "all", with_checks=False)
     by_task = {}
     unmatched = []
     for pr in prs:
