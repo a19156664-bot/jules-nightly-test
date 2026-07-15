@@ -1,12 +1,13 @@
 {
   "merged_t1": [
-    "T1-01"
+    "T1-01",
+    "T2-01"
   ],
   "results": [
     {
       "id": "T2-01",
       "status": "launched",
-      "session": "sessions/7310608365393003648"
+      "session": "sessions/7062814681414757197"
     }
   ]
 }
