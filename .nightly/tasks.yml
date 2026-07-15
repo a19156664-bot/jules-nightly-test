@@ -1,42 +1,151 @@
 # =============================================================================
-# .nightly/tasks.yml — 日中試運転第2弾用(automationMode 自動化の実地検証)
+# .nightly/tasks.yml — 初夜(2026-07-15、日中実行版)
 # -----------------------------------------------------------------------------
-# 目的: Publish PR 自動化(automationMode=AUTO_CREATE_PR)の実挙動を確認する。
-#       昨日の試運転第1弾では Jules セッションが「Ready for review」で止まったが、
-#       今回は Jules が自動的に PR を作成することを検証する。
+# 目的: 深夜バッチパイプラインの本番運用に先立つ初夜テスト(日中実行)。
+#       題材は「パイプラインの設定 UI 化」(セルフホスト型ドッグフーディング)。
+#       検証の主眼はパイプラインの動作であり、UI の完成度は問わない。
+#
+# 実行方法(日中テスト、Fable 5 との合意事項):
+#   $env:NIGHTLY_FORCE_DATE = "2026-07-15"
+#   $env:PYTHONIOENCODING   = "utf-8"
+#   python .nightly\scripts\nightly.py start-night
+#   # 以降 turn-switch / watch / report は自動実行される
 # =============================================================================
-night: 2026-07-14
+night: 2026-07-15
 test_paths: []
-protected_paths: []
+protected_paths:
+  - ".nightly/**"
+  - ".github/**"
+  - "AGENTS.md"
+  - "SETUP_GUIDE.md"
+
 turn1:
   - id: T1-01
-    title: "試運転第2弾: automationMode 自動PR作成の検証"
+    title: "初夜T1: webui/ 骨組みと pyproject.toml の新規作成"
     risk: low
     paths:
-      - "README.md"
+      - "pyproject.toml"
+      - "webui/__init__.py"
     prompt: |
       ## 目的(Why)
-      本タスクは深夜バッチパイプラインの日中試運転第2弾である。
-      昨日のパイプライン実装で追加した automationMode: AUTO_CREATE_PR の実挙動を
-      確認することが目的である。成果物の価値は問わない。
+      深夜バッチパイプラインを設定できるローカル Web UI(FastAPI ベース)の
+      骨組みを作る。本タスクは初夜テストの turn1 であり、成果物の機能価値は
+      問わない。パイプラインが指示通りに動くことの検証が主眼である。
 
       ## 変更内容(What)
-      リポジトリルートの README.md に、以下の1行を追記する。
-      - 追記内容: `<!-- nightly pipeline: dry-run 2nd OK (T1-01, auto-PR) -->`
-      - 追記位置: ファイル末尾(既存の最終行の後ろに改行1つを空けて追記)
-      - README.md が存在しない場合は、上記1行のみを内容とする README.md を新規作成する
+      以下のファイルを **新規作成** する。既存ファイルの変更は一切しない。
+
+      ### 1. `pyproject.toml`(リポジトリ直下、新規)
+
+      内容は以下の通り。過不足なく、この通りに記述すること:
+
+          [project]
+          name = "jules-nightly-webui"
+          version = "0.1.0"
+          description = "Local Web UI for configuring the nightly batch pipeline"
+          requires-python = ">=3.11"
+          dependencies = [
+              "fastapi>=0.110",
+              "uvicorn[standard]>=0.29",
+              "pyyaml>=6.0",
+              "pydantic>=2.6",
+          ]
+
+          [build-system]
+          requires = ["setuptools>=68"]
+          build-backend = "setuptools.build_meta"
+
+          [tool.setuptools.packages.find]
+          include = ["webui*"]
+
+      ### 2. `webui/__init__.py`(新規)
+
+      内容は以下の1行のみ:
+
+          """Local Web UI for configuring the nightly batch pipeline."""
 
       ## 完了条件
-      - [ ] README.md の末尾に上記コメント行が1行だけ追記されている
-      - [ ] README.md 以外のファイルを一切変更していない
-      - [ ] 空白・改行整形など「ついで」の変更を一切していない
+      - [ ] `pyproject.toml` が上記内容と完全一致で新規作成されている
+      - [ ] `webui/__init__.py` が上記内容と完全一致で新規作成されている
+      - [ ] 他ファイルへの変更(追加・削除・修正)が一切ない
+      - [ ] `.nightly/`、`.github/`、`AGENTS.md`、`SETUP_GUIDE.md` に触っていない
 
       ## やらないこと
-      - README.md 内の既存文言の修正・整形・翻訳
-      - 他ファイルへの追加・削除・リネーム
-      - 新規依存パッケージの追加
+      - `webui/app.py` や `webui/models.py` の作成(turn2 以降で扱う)
+      - 実際の `pip install` の実行(依存を宣言するだけ)
+      - GitHub Actions の CI 変更
+      - README.md への追記
+      - `.gitignore` の変更
+      - lint / format ツールの導入
+      - 型ヒントの追加やコメントの追加(指示された最小内容のみ)
 
       ## 補足(重要)
       本タスクはパイプラインの疎通確認である。指示に曖昧さや矛盾を感じた場合、
-      推測で埋めずにPR説明文の「未確定事項」に記載して提出すること。
-turn2: []
+      推測で埋めず、PR説明文の「未確定事項」に記載して提出すること。
+      特に `pyproject.toml` の内容は上記の通り厳密に一致させること。
+      「より良い設定」を追加してはならない(初夜の検証は最小変更が原則)。
+
+turn2:
+  - id: T2-01
+    title: "初夜T2: tasks.yml の Pydantic モデル定義"
+    risk: low
+    paths:
+      - "webui/models.py"
+    prompt: |
+      ## 目的(Why)
+      `.nightly/tasks.yml` の構造を Python の型として表現する。将来 Web UI が
+      tasks.yml を read/write する際の型安全性の基盤となる。本タスクは初夜
+      テストの turn2 であり、実際に UI から使うのは後日である。
+
+      ## 前提
+      turn1(T1-01)で `webui/__init__.py` と `pyproject.toml` が作成済み
+      である。本タスクは turn1 のマージ後に実行されるため、それらの存在を
+      前提としてよい。
+
+      ## 変更内容(What)
+      `webui/models.py` を **新規作成** する。内容は以下の通り、過不足なく:
+
+          """Pydantic models representing the .nightly/tasks.yml schema."""
+          from __future__ import annotations
+
+          from pydantic import BaseModel, Field
+
+
+          class Task(BaseModel):
+              """A single task assigned to Jules within a turn."""
+
+              id: str
+              title: str
+              risk: str = Field(description="one of: low / medium / high")
+              paths: list[str] = Field(default_factory=list)
+              prompt: str
+
+
+          class Manifest(BaseModel):
+              """The full .nightly/tasks.yml document."""
+
+              night: str = Field(description="YYYY-MM-DD, JST night date")
+              test_paths: list[str] = Field(default_factory=list)
+              protected_paths: list[str] = Field(default_factory=list)
+              turn1: list[Task] = Field(default_factory=list)
+              turn2: list[Task] = Field(default_factory=list)
+
+      ## 完了条件
+      - [ ] `webui/models.py` が上記内容と完全一致で新規作成されている
+      - [ ] `webui/models.py` 以外のファイルへの変更が一切ない
+      - [ ] 保護パス(`.nightly/**` など)に触っていない
+
+      ## やらないこと
+      - バリデーションロジックの追加(`@field_validator` など)
+      - `id` の一意性チェックや `night` の日付形式チェックの実装
+      - モデルの enum 化(`risk` を Literal 型にする等)
+      - テストコードの追加
+      - `webui/app.py` の作成
+      - `.nightly/tasks.yml` の読み込みコードの実装
+      - README や docstring の追加(指定された docstring のみでよい)
+
+      ## 補足(重要)
+      本タスクはパイプラインの疎通確認である。「より正確なモデル」に
+      改善してはならない。指示された最小の骨組みだけを実装すること。
+      指示に曖昧さや矛盾を感じた場合、推測で埋めず、PR説明文の
+      「未確定事項」に記載して提出すること。
