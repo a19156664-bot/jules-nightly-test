@@ -90,7 +90,20 @@ def repo() -> str:
 def night_date_now() -> str:
     """「夜の日付」= バッチが始まった夕方のJST日付。
     就寝前(~23時)にも深夜02:30にも翌朝05:45にも同じ日付を返すよう、
-    現在JST時刻から12時間引いた日付を採用する。"""
+    現在JST時刻から12時間引いた日付を採用する。
+
+    テスト用エスケープハッチ:
+        環境変数 NIGHTLY_FORCE_DATE が設定されている場合、その値を返す。
+        値は YYYY-MM-DD 形式でなければならない(形式不正時は ValueError)。
+        本番運用ではこの環境変数を設定してはならない。日中テスト専用。
+    """
+    forced = os.environ.get("NIGHTLY_FORCE_DATE")
+    if forced:
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", forced):
+            raise ValueError(
+                f"NIGHTLY_FORCE_DATE must be YYYY-MM-DD format, got: {forced!r}"
+            )
+        return forced
     return (datetime.datetime.now(JST) - datetime.timedelta(hours=12)).date().isoformat()
 
 
