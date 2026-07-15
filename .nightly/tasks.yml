@@ -1,17 +1,18 @@
 # =============================================================================
-# .nightly/tasks.yml — 初夜(2026-07-15、日中実行版)
+# .nightly/tasks.yml — 2夜目(2026-07-16)
 # -----------------------------------------------------------------------------
-# 目的: 深夜バッチパイプラインの本番運用に先立つ初夜テスト(日中実行)。
-#       題材は「パイプラインの設定 UI 化」(セルフホスト型ドッグフーディング)。
-#       検証の主眼はパイプラインの動作であり、UI の完成度は問わない。
+# 目的: UI 化フェーズの2夜目。初夜(T1: 骨組み / T2: Pydanticモデル)の上に
+#       FastAPI アプリ本体(turn1)と GET /tasks エンドポイント(turn2)を載せる。
+#       引き続き「最小変更・指示厳守」の原則で、パイプラインの安定運用を
+#       検証しつつ実用的な成果物を積み上げる。
 #
-# 実行方法(日中テスト、Fable 5 との合意事項):
-#   $env:NIGHTLY_FORCE_DATE = "2026-07-15"
+# 実行方法(日中テストの場合):
+#   $env:NIGHTLY_FORCE_DATE = "2026-07-16"
 #   $env:PYTHONIOENCODING   = "utf-8"
 #   python .nightly\scripts\nightly.py start-night
-#   # 以降 turn-switch / watch / report は自動実行される
+#   # 夜間本番の場合は NIGHTLY_FORCE_DATE 不要
 # =============================================================================
-night: 2026-07-15
+night: 2026-07-16
 test_paths: []
 protected_paths:
   - ".nightly/**"
@@ -21,131 +22,140 @@ protected_paths:
 
 turn1:
   - id: T1-01
-    title: "初夜T1: webui/ 骨組みと pyproject.toml の新規作成"
+    title: "2夜目T1: FastAPI アプリ本体(webui/app.py)の新規作成"
     risk: low
     paths:
-      - "pyproject.toml"
-      - "webui/__init__.py"
+      - "webui/app.py"
     prompt: |
       ## 目的(Why)
-      深夜バッチパイプラインを設定できるローカル Web UI(FastAPI ベース)の
-      骨組みを作る。本タスクは初夜テストの turn1 であり、成果物の機能価値は
-      問わない。パイプラインが指示通りに動くことの検証が主眼である。
+      深夜バッチパイプラインを設定するローカル Web UI の FastAPI アプリ
+      本体を作る。本タスクは2夜目の turn1 であり、エンドポイントの実装は
+      turn2(T2-01)で行う。ここではアプリの骨格のみを用意する。
+
+      ## 前提
+      初夜の成果物として以下が main にマージ済みである:
+      - `pyproject.toml`(fastapi / uvicorn / pyyaml / pydantic 依存宣言済み)
+      - `webui/__init__.py`
+      - `webui/models.py`(Task / Manifest モデル)
 
       ## 変更内容(What)
-      以下のファイルを **新規作成** する。既存ファイルの変更は一切しない。
+      `webui/app.py` を **新規作成** する。内容は以下の通り、過不足なく:
 
-      ### 1. `pyproject.toml`(リポジトリ直下、新規)
+          """FastAPI application for configuring the nightly batch pipeline."""
+          from __future__ import annotations
 
-      内容は以下の通り。過不足なく、この通りに記述すること:
+          from fastapi import FastAPI
 
-          [project]
-          name = "jules-nightly-webui"
-          version = "0.1.0"
-          description = "Local Web UI for configuring the nightly batch pipeline"
-          requires-python = ">=3.11"
-          dependencies = [
-              "fastapi>=0.110",
-              "uvicorn[standard]>=0.29",
-              "pyyaml>=6.0",
-              "pydantic>=2.6",
-          ]
+          app = FastAPI(
+              title="jules-nightly-webui",
+              description="Local Web UI for configuring the nightly batch pipeline",
+              version="0.1.0",
+          )
 
-          [build-system]
-          requires = ["setuptools>=68"]
-          build-backend = "setuptools.build_meta"
 
-          [tool.setuptools.packages.find]
-          include = ["webui*"]
-
-      ### 2. `webui/__init__.py`(新規)
-
-      内容は以下の1行のみ:
-
-          """Local Web UI for configuring the nightly batch pipeline."""
+          @app.get("/health")
+          def health() -> dict[str, str]:
+              """Liveness probe used to confirm the app boots correctly."""
+              return {"status": "ok"}
 
       ## 完了条件
-      - [ ] `pyproject.toml` が上記内容と完全一致で新規作成されている
-      - [ ] `webui/__init__.py` が上記内容と完全一致で新規作成されている
-      - [ ] 他ファイルへの変更(追加・削除・修正)が一切ない
-      - [ ] `.nightly/`、`.github/`、`AGENTS.md`、`SETUP_GUIDE.md` に触っていない
+      - [ ] `webui/app.py` が上記内容と完全一致で新規作成されている
+      - [ ] `webui/app.py` 以外のファイルへの変更が一切ない
+      - [ ] 保護パス(`.nightly/**` など)に触っていない
+      - [ ] `python -c "from webui.app import app"` がエラーなく通る
 
       ## やらないこと
-      - `webui/app.py` や `webui/models.py` の作成(turn2 以降で扱う)
-      - 実際の `pip install` の実行(依存を宣言するだけ)
-      - GitHub Actions の CI 変更
-      - README.md への追記
-      - `.gitignore` の変更
+      - GET /tasks や PUT /tasks の実装(turn2 で扱う)
+      - `webui/models.py` の import(本タスクでは不要)
+      - CORS / ミドルウェア / 例外ハンドラの追加
+      - uvicorn 起動スクリプトや `__main__` ブロックの追加
+      - テストコードの追加
+      - README への追記
       - lint / format ツールの導入
-      - 型ヒントの追加やコメントの追加(指示された最小内容のみ)
 
       ## 補足(重要)
-      本タスクはパイプラインの疎通確認である。指示に曖昧さや矛盾を感じた場合、
-      推測で埋めず、PR説明文の「未確定事項」に記載して提出すること。
-      特に `pyproject.toml` の内容は上記の通り厳密に一致させること。
-      「より良い設定」を追加してはならない(初夜の検証は最小変更が原則)。
+      「より良いアプリ構成」に改善してはならない。指示された最小の骨組み
+      だけを実装すること。指示に曖昧さや矛盾を感じた場合、推測で埋めず、
+      PR説明文の「未確定事項」に記載して提出すること。
 
 turn2:
   - id: T2-01
-    title: "初夜T2: tasks.yml の Pydantic モデル定義"
+    title: "2夜目T2: GET /tasks エンドポイントの実装"
     risk: low
+    depends_on: ["T1-01"]
     paths:
-      - "webui/models.py"
+      - "webui/app.py"
     prompt: |
       ## 目的(Why)
-      `.nightly/tasks.yml` の構造を Python の型として表現する。将来 Web UI が
-      tasks.yml を read/write する際の型安全性の基盤となる。本タスクは初夜
-      テストの turn2 であり、実際に UI から使うのは後日である。
+      `.nightly/tasks.yml` を読み込んで JSON として返す GET /tasks
+      エンドポイントを実装する。Web UI がタスク定義を画面表示するための
+      最初の実用機能である。
 
       ## 前提
-      turn1(T1-01)で `webui/__init__.py` と `pyproject.toml` が作成済み
-      である。本タスクは turn1 のマージ後に実行されるため、それらの存在を
-      前提としてよい。
+      本夜の turn1(T1-01)で `webui/app.py` が作成済みである。本タスクは
+      turn1 のマージ後に実行される。また初夜の成果物 `webui/models.py`
+      (Task / Manifest)も main に存在する。
 
       ## 変更内容(What)
-      `webui/models.py` を **新規作成** する。内容は以下の通り、過不足なく:
+      `webui/app.py` を **以下の内容に置き換える**(全文):
 
-          """Pydantic models representing the .nightly/tasks.yml schema."""
+          """FastAPI application for configuring the nightly batch pipeline."""
           from __future__ import annotations
 
-          from pydantic import BaseModel, Field
+          from pathlib import Path
+
+          import yaml
+          from fastapi import FastAPI, HTTPException
+
+          from webui.models import Manifest
+
+          TASKS_YML_PATH = Path(".nightly/tasks.yml")
+
+          app = FastAPI(
+              title="jules-nightly-webui",
+              description="Local Web UI for configuring the nightly batch pipeline",
+              version="0.1.0",
+          )
 
 
-          class Task(BaseModel):
-              """A single task assigned to Jules within a turn."""
-
-              id: str
-              title: str
-              risk: str = Field(description="one of: low / medium / high")
-              paths: list[str] = Field(default_factory=list)
-              prompt: str
+          @app.get("/health")
+          def health() -> dict[str, str]:
+              """Liveness probe used to confirm the app boots correctly."""
+              return {"status": "ok"}
 
 
-          class Manifest(BaseModel):
-              """The full .nightly/tasks.yml document."""
-
-              night: str = Field(description="YYYY-MM-DD, JST night date")
-              test_paths: list[str] = Field(default_factory=list)
-              protected_paths: list[str] = Field(default_factory=list)
-              turn1: list[Task] = Field(default_factory=list)
-              turn2: list[Task] = Field(default_factory=list)
+          @app.get("/tasks")
+          def get_tasks() -> Manifest:
+              """Return the current .nightly/tasks.yml as a validated Manifest."""
+              if not TASKS_YML_PATH.exists():
+                  raise HTTPException(status_code=404, detail="tasks.yml not found")
+              try:
+                  raw = yaml.safe_load(TASKS_YML_PATH.read_text(encoding="utf-8"))
+              except yaml.YAMLError as exc:
+                  raise HTTPException(
+                      status_code=500, detail=f"failed to parse tasks.yml: {exc}"
+                  ) from exc
+              if raw is None:
+                  raise HTTPException(status_code=500, detail="tasks.yml is empty")
+              return Manifest.model_validate(raw)
 
       ## 完了条件
-      - [ ] `webui/models.py` が上記内容と完全一致で新規作成されている
-      - [ ] `webui/models.py` 以外のファイルへの変更が一切ない
+      - [ ] `webui/app.py` が上記内容と完全一致になっている
+      - [ ] `webui/app.py` 以外のファイルへの変更が一切ない
       - [ ] 保護パス(`.nightly/**` など)に触っていない
+      - [ ] `python -c "from webui.app import app"` がエラーなく通る
 
       ## やらないこと
-      - バリデーションロジックの追加(`@field_validator` など)
-      - `id` の一意性チェックや `night` の日付形式チェックの実装
-      - モデルの enum 化(`risk` を Literal 型にする等)
-      - テストコードの追加
-      - `webui/app.py` の作成
-      - `.nightly/tasks.yml` の読み込みコードの実装
-      - README や docstring の追加(指定された docstring のみでよい)
+      - PUT /tasks(書き込み系)の実装(3夜目で扱う)
+      - `night` の日付バリデーション追加
+      - `TASKS_YML_PATH` の環境変数化・設定ファイル化
+      - レスポンスのキャッシュ
+      - テストコードの追加(smoke test は3夜目で扱う)
+      - HTML / 静的ファイルの追加
+      - README への追記
 
       ## 補足(重要)
-      本タスクはパイプラインの疎通確認である。「より正確なモデル」に
-      改善してはならない。指示された最小の骨組みだけを実装すること。
-      指示に曖昧さや矛盾を感じた場合、推測で埋めず、PR説明文の
-      「未確定事項」に記載して提出すること。
+      turn1 の成果物を前提とした「全文置き換え」である点に注意。差分適用
+      ではなくファイル全体を上記内容と一致させること。「より堅牢な実装」に
+      改善してはならない。指示に曖昧さや矛盾を感じた場合、推測で埋めず、
+      PR説明文の「未確定事項」に記載して提出すること。
