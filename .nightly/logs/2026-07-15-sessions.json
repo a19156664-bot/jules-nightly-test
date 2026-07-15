@@ -1,5 +1,5 @@
 {
-  "checked_at": "2026-07-16T03:59:55.944699+09:00",
+  "checked_at": "2026-07-16T05:15:38.936744+09:00",
   "sessions": [
     {
       "task": "T1-01",
@@ -11,7 +11,7 @@
     {
       "task": "T2-01",
       "session": "sessions/7062814681414757197",
-      "state": "IN_PROGRESS",
+      "state": "AWAITING_USER_FEEDBACK",
       "jules_url": "https://jules.google.com/session/7062814681414757197"
     }
   ]
