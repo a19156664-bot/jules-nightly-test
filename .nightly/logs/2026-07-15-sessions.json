@@ -1,0 +1,18 @@
+{
+  "checked_at": "2026-07-16T06:28:26.239368+09:00",
+  "sessions": [
+    {
+      "task": "T1-01",
+      "session": "sessions/9792531101868153373",
+      "state": "COMPLETED",
+      "jules_url": "https://jules.google.com/session/9792531101868153373",
+      "pr_url": "https://github.com/a19156664-bot/jules-nightly-test/pull/3"
+    },
+    {
+      "task": "T2-01",
+      "session": "sessions/7062814681414757197",
+      "state": "AWAITING_USER_FEEDBACK",
+      "jules_url": "https://jules.google.com/session/7062814681414757197"
+    }
+  ]
+}
