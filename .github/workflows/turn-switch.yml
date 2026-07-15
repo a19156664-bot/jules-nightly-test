@@ -24,6 +24,11 @@ on:
         type: choice
         options: [start-night, turn-switch, validate]
         default: validate
+      force_date:
+        description: "日中テスト用: night日付を上書き (例: 2026-07-16)。空欄なら通常動作"
+        required: false
+        type: string
+        default: ""
 
 # 同時実行を1本に制限(二重起動による多重投入を防止)
 concurrency:
@@ -43,6 +48,8 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
       JULES_SOURCE_NAME: ${{ vars.JULES_SOURCE_NAME }}
+      # workflow_dispatch 以外では null → 空文字になり、night_date_now() は通常動作
+      NIGHTLY_FORCE_DATE: ${{ github.event.inputs.force_date }}
     steps:
       - name: Checkout main (マニフェストの正本は常にmainから読む)
         uses: actions/checkout@v4
