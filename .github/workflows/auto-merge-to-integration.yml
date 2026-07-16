@@ -10,31 +10,43 @@
 # 合格 → `gh pr merge --auto` を予約。実際のマージは必須チェック(ci)が
 #         全て緑になった時点でGitHubが実行する。CIを迂回した直接マージはしない。
 # 不合格 → nightly-blocked ラベル + 理由コメントを付けて放置(翌朝レビューへ)
+#
+# マージ成立後 → turn-switch を workflow_dispatch で起動し、次ターンを即投入する
+#   (cron 02:30 を待たずに済ませるための短絡経路。cron 側は保険として残る)
+#   gate ジョブは `gh pr merge --auto` を「予約」するだけで、実際のマージは必須
+#   チェックが緑になった時点で GitHub が後から行う。したがって「マージされた」
+#   ことを知れるのは pull_request(closed) + merged==true だけであり、
+#   dispatch はそこに紐づける(予約時点で起動すると、CI落ちでマージされなかった
+#   場合にも次ターンが走ってしまう)。
 # =============================================================================
 name: nightly-auto-merge
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, closed]
 
 permissions:
   contents: write
   pull-requests: write
 
+# nightly-orchestrator(turn-switch側)とは別系統。auto-merge はPR単位で独立に動く。
+# action ごとにグループを分け、マージ検知(closed)の実行が後続イベントに
+# キャンセルされないようにする。
 concurrency:
-  group: nightly-gate-${{ github.event.pull_request.number }}
+  group: nightly-gate-${{ github.event.pull_request.number }}-${{ github.event.action }}
   cancel-in-progress: true
 
 jobs:
   gate:
     # 統合ブランチ宛て・同一リポジトリ発のPRのみ。フォークPRは対象外(安全側)
     if: >-
+      github.event.action != 'closed' &&
       startsWith(github.event.pull_request.base.ref, 'integration/nightly-') &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      GH_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       JULES_BOT_LOGINS: ${{ vars.JULES_BOT_LOGINS }}
     steps:
       - name: Checkout main (tasks.yml の正本をmainから読む — PR側の改変を無効化)
@@ -47,3 +59,47 @@ jobs:
 
       - name: Run merge gate
         run: python3 .nightly/scripts/nightly.py gate --pr ${{ github.event.pull_request.number }}
+
+  # ---------------------------------------------------------------------------
+  # マージが「実際に成立した」場合のみ turn-switch を起動する。
+  # closed かつ merged==true が唯一の成立シグナル(closed だけだと、ゲート不合格や
+  # 手動クローズで閉じられたPRでも起動してしまう)。
+  # ---------------------------------------------------------------------------
+  dispatch-turn-switch:
+    if: >-
+      github.event.action == 'closed' &&
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.base.ref, 'integration/nightly-') &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # ジョブ単位で最小権限に絞る(workflow_dispatch の発火には actions: write が必要)
+    permissions:
+      actions: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      BASE_REF: ${{ github.event.pull_request.base.ref }}
+    steps:
+      - name: Dispatch turn-switch
+        run: |
+          set -euo pipefail
+
+          # 統合ブランチ名から night 日付を復元する: integration/nightly-20260716 → 2026-07-16
+          # workflow_dispatch の input は pull_request 起動時には存在しないため、
+          # 「今どの夜のPRがマージされたか」を base ref から直接引くのが唯一確実な経路。
+          # この値は tasks.yml の night と一致する(gate が base ref を突き合わせ済み)。
+          digits="${BASE_REF#integration/nightly-}"
+          if ! [[ "$digits" =~ ^[0-9]{8}$ ]]; then
+            echo "::error::base ref から night 日付を復元できません: '${BASE_REF}'"
+            exit 1
+          fi
+          force_date="${digits:0:4}-${digits:4:2}-${digits:6:2}"
+
+          echo "PR #${{ github.event.pull_request.number }} merged → turn-switch (night=${force_date})"
+          gh workflow run turn-switch.yml \
+            --repo "${{ github.repository }}" \
+            -f command=turn-switch \
+            -f force_date="${force_date}"
+
+          echo "## 🔁 PR #${{ github.event.pull_request.number }} マージ成立 → turn-switch 起動 (night=${force_date})" \
+            >> "$GITHUB_STEP_SUMMARY"
