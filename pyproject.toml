@@ -10,6 +10,9 @@ dependencies = [
     "pydantic>=2.6",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest"]
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"

@@ -731,7 +731,9 @@ def cmd_report(_args) -> int:
               "4. 横断所見をナレッジログへ(フライホイール)"]
 
     report = "\n".join(lines)
-    gh_put_file(branch, f".nightly/reports/morning-report-{m['night']}.md",
+    # 統合ブランチには branch protection(ci必須)があり PUT が 409 で拒否されるため、
+    # レポートは main に直接書き込む(統合ブランチ側の変更は生成しない)。
+    gh_put_file("main", f".nightly/reports/morning-report-{m['night']}.md",
                 report, f"nightly: morning report {m['night']}")
     add_summary(report)
     return 0

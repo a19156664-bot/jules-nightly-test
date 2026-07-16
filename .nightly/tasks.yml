@@ -1,19 +1,23 @@
 # =============================================================================
-# .nightly/tasks.yml — 2夜目(2026-07-16)
+# .nightly/tasks.yml — 3夜目(2026-07-17)
 # -----------------------------------------------------------------------------
-# 目的: UI 化フェーズの2夜目。初夜(T1: 骨組み / T2: Pydanticモデル)の上に
-#       FastAPI アプリ本体(turn1)と GET /tasks エンドポイント(turn2)を載せる。
-#       引き続き「最小変更・指示厳守」の原則で、パイプラインの安定運用を
-#       検証しつつ実用的な成果物を積み上げる。
+# 目的: UI 化フェーズの3夜目。GET /tasks(2夜目)に続き、書き込み系の
+#       PUT /tasks(turn1)と、/health・GET・PUT を通す smoke test(turn2)を
+#       積む。プロンプトは分量が増えたため外部ファイル(prompt_file)に分離。
+#
+# 注記(スキーマ): 本パイプラインの正本スキーマは night / turn1 / turn2 で
+#   あり、統合ブランチ名は night から導出される(integration_branch キーは
+#   存在しない)。各タスクには書き込み許可 paths が必須。
 #
 # 実行方法(日中テストの場合):
-#   $env:NIGHTLY_FORCE_DATE = "2026-07-16"
+#   $env:NIGHTLY_FORCE_DATE = "2026-07-17"
 #   $env:PYTHONIOENCODING   = "utf-8"
 #   python .nightly\scripts\nightly.py start-night
 #   # 夜間本番の場合は NIGHTLY_FORCE_DATE 不要
 # =============================================================================
-night: 2026-07-16
-test_paths: []
+night: 2026-07-17
+test_paths:
+  - "tests/**"
 protected_paths:
   - ".nightly/**"
   - ".github/**"
@@ -22,140 +26,19 @@ protected_paths:
 
 turn1:
   - id: T1-01
-    title: "2夜目T1: FastAPI アプリ本体(webui/app.py)の新規作成"
+    title: "PUT /tasks エンドポイント追加"
     risk: low
     paths:
       - "webui/app.py"
-    prompt: |
-      ## 目的(Why)
-      深夜バッチパイプラインを設定するローカル Web UI の FastAPI アプリ
-      本体を作る。本タスクは2夜目の turn1 であり、エンドポイントの実装は
-      turn2(T2-01)で行う。ここではアプリの骨格のみを用意する。
-
-      ## 前提
-      初夜の成果物として以下が main にマージ済みである:
-      - `pyproject.toml`(fastapi / uvicorn / pyyaml / pydantic 依存宣言済み)
-      - `webui/__init__.py`
-      - `webui/models.py`(Task / Manifest モデル)
-
-      ## 変更内容(What)
-      `webui/app.py` を **新規作成** する。内容は以下の通り、過不足なく:
-
-          """FastAPI application for configuring the nightly batch pipeline."""
-          from __future__ import annotations
-
-          from fastapi import FastAPI
-
-          app = FastAPI(
-              title="jules-nightly-webui",
-              description="Local Web UI for configuring the nightly batch pipeline",
-              version="0.1.0",
-          )
-
-
-          @app.get("/health")
-          def health() -> dict[str, str]:
-              """Liveness probe used to confirm the app boots correctly."""
-              return {"status": "ok"}
-
-      ## 完了条件
-      - [ ] `webui/app.py` が上記内容と完全一致で新規作成されている
-      - [ ] `webui/app.py` 以外のファイルへの変更が一切ない
-      - [ ] 保護パス(`.nightly/**` など)に触っていない
-      - [ ] `python -c "from webui.app import app"` がエラーなく通る
-
-      ## やらないこと
-      - GET /tasks や PUT /tasks の実装(turn2 で扱う)
-      - `webui/models.py` の import(本タスクでは不要)
-      - CORS / ミドルウェア / 例外ハンドラの追加
-      - uvicorn 起動スクリプトや `__main__` ブロックの追加
-      - テストコードの追加
-      - README への追記
-      - lint / format ツールの導入
-
-      ## 補足(重要)
-      「より良いアプリ構成」に改善してはならない。指示された最小の骨組み
-      だけを実装すること。指示に曖昧さや矛盾を感じた場合、推測で埋めず、
-      PR説明文の「未確定事項」に記載して提出すること。
+    prompt_file: ".nightly/prompts/night3-t1.md"
 
 turn2:
   - id: T2-01
-    title: "2夜目T2: GET /tasks エンドポイントの実装"
+    title: "smoke test（/health, GET /tasks, PUT /tasks）"
     risk: low
     depends_on: ["T1-01"]
     paths:
+      - "tests/**"
       - "webui/app.py"
-    prompt: |
-      ## 目的(Why)
-      `.nightly/tasks.yml` を読み込んで JSON として返す GET /tasks
-      エンドポイントを実装する。Web UI がタスク定義を画面表示するための
-      最初の実用機能である。
-
-      ## 前提
-      本夜の turn1(T1-01)で `webui/app.py` が作成済みである。本タスクは
-      turn1 のマージ後に実行される。また初夜の成果物 `webui/models.py`
-      (Task / Manifest)も main に存在する。
-
-      ## 変更内容(What)
-      `webui/app.py` を **以下の内容に置き換える**(全文):
-
-          """FastAPI application for configuring the nightly batch pipeline."""
-          from __future__ import annotations
-
-          from pathlib import Path
-
-          import yaml
-          from fastapi import FastAPI, HTTPException
-
-          from webui.models import Manifest
-
-          TASKS_YML_PATH = Path(".nightly/tasks.yml")
-
-          app = FastAPI(
-              title="jules-nightly-webui",
-              description="Local Web UI for configuring the nightly batch pipeline",
-              version="0.1.0",
-          )
-
-
-          @app.get("/health")
-          def health() -> dict[str, str]:
-              """Liveness probe used to confirm the app boots correctly."""
-              return {"status": "ok"}
-
-
-          @app.get("/tasks")
-          def get_tasks() -> Manifest:
-              """Return the current .nightly/tasks.yml as a validated Manifest."""
-              if not TASKS_YML_PATH.exists():
-                  raise HTTPException(status_code=404, detail="tasks.yml not found")
-              try:
-                  raw = yaml.safe_load(TASKS_YML_PATH.read_text(encoding="utf-8"))
-              except yaml.YAMLError as exc:
-                  raise HTTPException(
-                      status_code=500, detail=f"failed to parse tasks.yml: {exc}"
-                  ) from exc
-              if raw is None:
-                  raise HTTPException(status_code=500, detail="tasks.yml is empty")
-              return Manifest.model_validate(raw)
-
-      ## 完了条件
-      - [ ] `webui/app.py` が上記内容と完全一致になっている
-      - [ ] `webui/app.py` 以外のファイルへの変更が一切ない
-      - [ ] 保護パス(`.nightly/**` など)に触っていない
-      - [ ] `python -c "from webui.app import app"` がエラーなく通る
-
-      ## やらないこと
-      - PUT /tasks(書き込み系)の実装(3夜目で扱う)
-      - `night` の日付バリデーション追加
-      - `TASKS_YML_PATH` の環境変数化・設定ファイル化
-      - レスポンスのキャッシュ
-      - テストコードの追加(smoke test は3夜目で扱う)
-      - HTML / 静的ファイルの追加
-      - README への追記
-
-      ## 補足(重要)
-      turn1 の成果物を前提とした「全文置き換え」である点に注意。差分適用
-      ではなくファイル全体を上記内容と一致させること。「より堅牢な実装」に
-      改善してはならない。指示に曖昧さや矛盾を感じた場合、推測で埋めず、
-      PR説明文の「未確定事項」に記載して提出すること。
+      - "pyproject.toml"
+    prompt_file: ".nightly/prompts/night3-t2.md"
