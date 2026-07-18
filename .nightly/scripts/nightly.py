@@ -491,9 +491,12 @@ def cmd_start_night(_args) -> int:
     gh_create_branch_from_main(branch)
     log(f"created branch {branch}")
     results = launch_tasks(m, m["turn1"], branch)
-    gh_put_file(branch, f".nightly/logs/{m['night']}-turn1.json",
-                json.dumps(results, ensure_ascii=False, indent=2),
-                f"nightly: turn1 launch log {m['night']}")
+    try:
+        gh_put_file(branch, f".nightly/logs/{m['night']}-turn1.json",
+                    json.dumps(results, ensure_ascii=False, indent=2),
+                    f"nightly: turn1 launch log {m['night']}")
+    except RuntimeError as e:
+        log(f"::warning::turn1 ログの書き込みに失敗しました(続行します): {e}")
     failed = [r for r in results if r["status"] != "launched"]
     add_summary(f"## 🌙 第1ターン開始 (branch: `{branch}`)\n\n{results_table(results)}"
                 + ("\n\n⚠️ 投入失敗があります。翌朝確認してください。" if failed else ""))
@@ -522,10 +525,13 @@ def cmd_turn_switch(_args) -> int:
             launch.append(t)
 
     results = launch_tasks(m, launch, branch) + skipped
-    gh_put_file(branch, f".nightly/logs/{m['night']}-turn2.json",
-                json.dumps({"merged_t1": sorted(merged), "results": results},
-                           ensure_ascii=False, indent=2),
-                f"nightly: turn2 switch log {m['night']}")
+    try:
+        gh_put_file(branch, f".nightly/logs/{m['night']}-turn2.json",
+                    json.dumps({"merged_t1": sorted(merged), "results": results},
+                               ensure_ascii=False, indent=2),
+                    f"nightly: turn2 switch log {m['night']}")
+    except RuntimeError as e:
+        log(f"::warning::turn2 ログの書き込みに失敗しました(続行します): {e}")
     add_summary(f"## 🔄 ターン切替 (T1マージ済: {', '.join(sorted(merged)) or 'なし'})\n\n"
                 + results_table(results))
     return 0
@@ -653,9 +659,12 @@ def cmd_watch(_args) -> int:
 
     payload = {"checked_at": datetime.datetime.now(JST).isoformat(),
                "sessions": records}
-    gh_put_file(branch, f".nightly/logs/{m['night']}-sessions.json",
-                json.dumps(payload, ensure_ascii=False, indent=2),
-                f"nightly: session watch log {m['night']}")
+    try:
+        gh_put_file(branch, f".nightly/logs/{m['night']}-sessions.json",
+                    json.dumps(payload, ensure_ascii=False, indent=2),
+                    f"nightly: session watch log {m['night']}")
+    except RuntimeError as e:
+        log(f"::warning::session watch ログの書き込みに失敗しました(続行します): {e}")
     add_summary(watch_table(records, m["night"], branch))
     return 0
 
