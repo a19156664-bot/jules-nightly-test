@@ -1,0 +1,48 @@
+# =============================================================================
+# dispatch-after-merge.yml — マージ成立後に turn-switch を起動する
+# -----------------------------------------------------------------------------
+# auto-merge-to-integration.yml と分離した理由:
+#   GITHUB_TOKEN でマージされた PR は「同一ワークフロー」の closed イベントを
+#   発火しない（GitHub の無限ループ防止仕様）。別ファイルにすることで
+#   closed イベントが正常に発火する。
+# =============================================================================
+name: nightly-dispatch-after-merge
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  dispatch-turn-switch:
+    if: >-
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.base.ref, 'integration/nightly-') &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      BASE_REF: ${{ github.event.pull_request.base.ref }}
+    steps:
+      - name: Dispatch turn-switch
+        run: |
+          set -euo pipefail
+
+          # integration/nightly-20260718 → 2026-07-18
+          digits="${BASE_REF#integration/nightly-}"
+          if ! [[ "$digits" =~ ^[0-9]{8}$ ]]; then
+            echo "::error::base ref から night 日付を復元できません: '${BASE_REF}'"
+            exit 1
+          fi
+          force_date="${digits:0:4}-${digits:4:2}-${digits:6:2}"
+
+          echo "PR #${{ github.event.pull_request.number }} merged → turn-switch (night=${force_date})"
+          gh workflow run turn-switch.yml \
+            --repo "${{ github.repository }}" \
+            -f command=turn-switch \
+            -f force_date="${force_date}"
+
+          echo "## 🔁 PR #${{ github.event.pull_request.number }} マージ成立 → turn-switch 起動 (night=${force_date})" \
+            >> "$GITHUB_STEP_SUMMARY"

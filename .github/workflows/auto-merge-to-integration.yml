@@ -23,7 +23,7 @@ name: nightly-auto-merge
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, closed]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: write
@@ -60,46 +60,3 @@ jobs:
       - name: Run merge gate
         run: python3 .nightly/scripts/nightly.py gate --pr ${{ github.event.pull_request.number }}
 
-  # ---------------------------------------------------------------------------
-  # マージが「実際に成立した」場合のみ turn-switch を起動する。
-  # closed かつ merged==true が唯一の成立シグナル(closed だけだと、ゲート不合格や
-  # 手動クローズで閉じられたPRでも起動してしまう)。
-  # ---------------------------------------------------------------------------
-  dispatch-turn-switch:
-    if: >-
-      github.event.action == 'closed' &&
-      github.event.pull_request.merged == true &&
-      startsWith(github.event.pull_request.base.ref, 'integration/nightly-') &&
-      github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    # ジョブ単位で最小権限に絞る(workflow_dispatch の発火には actions: write が必要)
-    permissions:
-      actions: write
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      BASE_REF: ${{ github.event.pull_request.base.ref }}
-    steps:
-      - name: Dispatch turn-switch
-        run: |
-          set -euo pipefail
-
-          # 統合ブランチ名から night 日付を復元する: integration/nightly-20260716 → 2026-07-16
-          # workflow_dispatch の input は pull_request 起動時には存在しないため、
-          # 「今どの夜のPRがマージされたか」を base ref から直接引くのが唯一確実な経路。
-          # この値は tasks.yml の night と一致する(gate が base ref を突き合わせ済み)。
-          digits="${BASE_REF#integration/nightly-}"
-          if ! [[ "$digits" =~ ^[0-9]{8}$ ]]; then
-            echo "::error::base ref から night 日付を復元できません: '${BASE_REF}'"
-            exit 1
-          fi
-          force_date="${digits:0:4}-${digits:4:2}-${digits:6:2}"
-
-          echo "PR #${{ github.event.pull_request.number }} merged → turn-switch (night=${force_date})"
-          gh workflow run turn-switch.yml \
-            --repo "${{ github.repository }}" \
-            -f command=turn-switch \
-            -f force_date="${force_date}"
-
-          echo "## 🔁 PR #${{ github.event.pull_request.number }} マージ成立 → turn-switch 起動 (night=${force_date})" \
-            >> "$GITHUB_STEP_SUMMARY"
