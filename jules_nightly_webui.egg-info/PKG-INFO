@@ -1,0 +1,11 @@
+Metadata-Version: 2.4
+Name: jules-nightly-webui
+Version: 0.1.0
+Summary: Local Web UI for configuring the nightly batch pipeline
+Requires-Python: >=3.11
+Requires-Dist: fastapi>=0.110
+Requires-Dist: uvicorn[standard]>=0.29
+Requires-Dist: pyyaml>=6.0
+Requires-Dist: pydantic>=2.6
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
