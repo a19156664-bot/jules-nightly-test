@@ -11,7 +11,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest"]
+dev = [
+    "pytest",
+    "httpx",
+]
 
 [build-system]
 requires = ["setuptools>=68"]
