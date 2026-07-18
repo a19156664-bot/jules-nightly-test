@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 
 from webui.models import Manifest
 
@@ -37,3 +37,22 @@ def get_tasks() -> Manifest:
     if raw is None:
         raise HTTPException(status_code=500, detail="tasks.yml is empty")
     return Manifest.model_validate(raw)
+
+
+@app.put("/tasks")
+async def update_tasks(request: Request) -> dict[str, str]:
+    """Update .nightly/tasks.yml with new YAML content."""
+    body = await request.body()
+    try:
+        raw = yaml.safe_load(body.decode("utf-8"))
+    except yaml.YAMLError:
+        raise HTTPException(status_code=422, detail="invalid yaml")
+
+    if not isinstance(raw, dict):
+        raise HTTPException(status_code=422, detail="yaml must be a mapping")
+
+    if not {"night", "turn1", "turn2"}.issubset(raw.keys()):
+        raise HTTPException(status_code=422, detail="missing required keys")
+
+    TASKS_YML_PATH.write_bytes(body)
+    return {"status": "updated"}
