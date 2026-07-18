@@ -5,7 +5,8 @@ turn1:
     title: "state.yml 読み書きモジュール (state_manager.py) の新規作成"
     risk: "low"
     paths:
-      - ".nightly/scripts/state_manager.py"
+      - "commander/state_manager.py"
+      - "tests/test_state_manager.py"
     prompt_file: ".nightly/prompts/2026-07-18-T1-01.md"
 
 turn2:
@@ -13,8 +14,9 @@ turn2:
     title: "commander.ps1 雛形 + LOOP-ALERT Issue 作成スクリプトの新規作成"
     risk: "low"
     paths:
-      - ".nightly/commander.ps1"
-      - ".nightly/scripts/create_alert_issue.py"
+      - "commander/commander.ps1"
+      - "commander/create_alert_issue.py"
+      - "tests/test_create_alert_issue.py"
     prompt_file: ".nightly/prompts/2026-07-18-T2-01.md"
 
 test_paths:
