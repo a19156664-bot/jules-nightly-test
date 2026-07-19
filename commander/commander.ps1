@@ -59,7 +59,8 @@ try {
     $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
     $LogFile = Join-Path $LogDir "commander-$Timestamp.log"
     $Result | Out-File -FilePath $LogFile -Encoding utf8
-} catch {
+    & $Python "$PSScriptRoot\parse_output.py" $LogFile
+    } catch {
     $ErrorMessage = $_.Exception.Message
     $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
     $LogDir = Join-Path $PSScriptRoot "logs"
