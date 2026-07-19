@@ -1,4 +1,4 @@
-# =============================================================================
+﻿# =============================================================================
 # auto-merge-to-integration.yml — 夜間PRの自動マージゲート
 # -----------------------------------------------------------------------------
 # 対象: base が integration/nightly-* のPRのみ(mainへのPRには一切関与しない)
@@ -46,7 +46,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ secrets.PAT_AUTO_MERGE }}
       JULES_BOT_LOGINS: ${{ vars.JULES_BOT_LOGINS }}
     steps:
       - name: Checkout main (tasks.yml の正本をmainから読む — PR側の改変を無効化)
