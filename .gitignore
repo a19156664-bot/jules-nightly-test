@@ -15,3 +15,5 @@ __pycache__/
 
 # Local scratch
 _tmp/
+commander/state.yml
+commander/poc-prompt.txt
