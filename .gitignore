@@ -17,3 +17,5 @@ __pycache__/
 _tmp/
 commander/state.yml
 commander/poc-prompt.txt
+commander/current-prompt.txt
+commander/logs/
