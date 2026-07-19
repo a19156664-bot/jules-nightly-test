@@ -22,8 +22,12 @@ try {
     $openPRs = (& $Gh pr list -R $Repo --state open --json number --jq 'length')
     $alertOpen = (& $Gh issue list -R $Repo --label loop-alert --state open --json number --jq 'length')
     $turnDue = & $Python "$PSScriptRoot\state_manager.py" --check-turn-due
-    if ($openPRs -eq 0 -and $alertOpen -eq 0 -and $turnDue -like "False*") {
-        & $Python "$PSScriptRoot\state_manager.py" --record-wakeup "no-work"
+    if ($openPRs -eq 0 -and $turnDue -like "False*") {
+        if ($alertOpen -gt 0) {
+            & $Python "$PSScriptRoot\state_manager.py" --record-wakeup "alert-pending-human"
+        } else {
+            & $Python "$PSScriptRoot\state_manager.py" --record-wakeup "no-work"
+        }
         exit 0
     }
     # ===== Budget check (soft skip) =====
