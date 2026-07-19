@@ -6,7 +6,7 @@ from typing import Any
 
 import yaml
 from fastapi import FastAPI, HTTPException, Request
-
+from fastapi.responses import HTMLResponse
 from webui.models import Manifest
 
 TASKS_YML_PATH = Path(".nightly/tasks.yml")
@@ -131,3 +131,16 @@ def api_signal() -> dict[str, str]:
     turn = state.get("turn", "unknown")
     loop_status = state.get("loop_status", "unknown")
     return {"signal": "green", "reason": f"turn: {turn}, status: {loop_status}"}
+# ---------------------------------------------------------------------------
+# Dashboard HTML (Layer 1)
+# ---------------------------------------------------------------------------
+
+DASHBOARD_HTML = Path(__file__).parent / "dashboard.html"
+
+
+@app.get("/", response_class=HTMLResponse)
+def dashboard():
+    """Serve the Layer 1 dashboard."""
+    if not DASHBOARD_HTML.exists():
+        return HTMLResponse("<h1>dashboard.html not found</h1>", status_code=404)
+    return HTMLResponse(DASHBOARD_HTML.read_text(encoding="utf-8"))
