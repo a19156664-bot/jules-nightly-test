@@ -35,8 +35,6 @@
     margin: 0 auto;
     line-height: 1.5;
   }
-
-  /* ── Header ── */
   .header {
     display: flex;
     align-items: center;
@@ -59,8 +57,6 @@
   .signal-label { font-size: 17px; font-weight: 500; }
   .signal-detail { font-size: 13px; color: var(--text-muted); margin-left: 4px; }
   .updated { font-size: 12px; color: var(--text-muted); }
-
-  /* ── Metric cards ── */
   .metrics {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -77,8 +73,6 @@
   .card-value .denom { font-size: 14px; color: var(--text-muted); }
   .bar { height: 4px; background: var(--border); border-radius: 2px; margin-top: 8px; }
   .bar-fill { height: 4px; border-radius: 2px; background: var(--accent); transition: width 0.4s; }
-
-  /* ── Sections ── */
   .section {
     background: var(--surface-2);
     border: 0.5px solid var(--border);
@@ -95,8 +89,6 @@
     gap: 6px;
   }
   .section-icon { font-size: 15px; }
-
-  /* ── Task / PR rows ── */
   .row {
     display: flex;
     align-items: center;
@@ -123,9 +115,6 @@
   }
   .badge-merged { background: var(--green-bg); color: var(--green); }
   .badge-open { background: var(--yellow-bg); color: var(--yellow); }
-  .badge-ok { background: var(--green-bg); color: var(--green); }
-
-  /* ── Footer ── */
   .footer {
     background: var(--surface-1);
     border-radius: var(--radius);
@@ -138,8 +127,6 @@
   .footer-icon { font-size: 16px; color: var(--text-secondary); }
   .footer-text { font-size: 13px; color: var(--text-secondary); }
   .footer-mono { font-size: 11px; font-family: var(--mono); color: var(--text-muted); margin-top: 2px; }
-
-  /* ── Loading / Error ── */
   .error-banner {
     background: var(--red-bg);
     color: var(--red);
@@ -153,8 +140,6 @@
 </style>
 </head>
 <body>
-
-<!-- Header -->
 <div class="header">
   <div class="header-left">
     <span class="signal-dot green" id="signalDot"></span>
@@ -163,10 +148,7 @@
   </div>
   <span class="updated" id="updatedAt"></span>
 </div>
-
 <div class="error-banner" id="errorBanner"></div>
-
-<!-- Metrics -->
 <div class="metrics">
   <div class="card">
     <div class="card-label">Target Night</div>
@@ -187,157 +169,84 @@
     <div class="card-value" id="metricPending">--</div>
   </div>
 </div>
-
-<!-- Tasks -->
 <div class="section">
   <div class="section-title"><span class="section-icon">&#9789;</span> Tonight's Tasks</div>
   <div id="tasksList"><span class="loading">Loading tasks...</span></div>
 </div>
-
-<!-- State details -->
+<div class="section">
+  <div class="section-title"><span class="section-icon">&#9095;</span> Recent PRs</div>
+  <div id="prsList"><span class="loading">Loading PRs...</span></div>
+</div>
 <div class="section">
   <div class="section-title"><span class="section-icon">&#9881;</span> State Details</div>
   <div id="stateDetails"><span class="loading">Loading state...</span></div>
 </div>
-
-<!-- Footer -->
 <div class="footer">
   <span class="footer-icon">&#60;/&#62;</span>
   <div>
     <div class="footer-text">Machine-readable view &mdash; same data source as the commander LLM</div>
-    <div class="footer-mono">GET /api/state | /api/budget | /api/signal</div>
+    <div class="footer-mono">GET /api/state | /api/budget | /api/signal | /api/prs</div>
   </div>
 </div>
-
 <script>
-const SIGNAL_LABELS = {
-  green: "Normal Operation",
-  yellow: "Pending Action",
-  red: "Stopped"
-};
-const SIGNAL_JP = {
-  green: "正常運転中",
-  yellow: "承認待ち",
-  red: "停止中"
-};
-
-function setSignal(sig, reason) {
-  const dot = document.getElementById("signalDot");
-  const label = document.getElementById("signalLabel");
-  const detail = document.getElementById("signalDetail");
-  dot.className = "signal-dot " + sig;
-  label.textContent = SIGNAL_JP[sig] || sig;
-  detail.textContent = reason || "";
-}
-
-function setError(msg) {
-  const banner = document.getElementById("errorBanner");
-  if (msg) {
-    banner.textContent = msg;
-    banner.style.display = "block";
-  } else {
-    banner.style.display = "none";
-  }
-}
-
-function pct(n, d) { return d > 0 ? Math.min(100, Math.round(n / d * 100)) : 0; }
-
-function updateTime() {
-  const now = new Date();
-  const hh = String(now.getHours()).padStart(2, "0");
-  const mm = String(now.getMinutes()).padStart(2, "0");
-  document.getElementById("updatedAt").textContent = "Updated " + hh + ":" + mm;
-}
-
-async function fetchJSON(url) {
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(url + " -> " + resp.status);
-  return resp.json();
-}
-
-async function refresh() {
-  try {
-    const [state, signal] = await Promise.all([
-      fetchJSON("/api/state"),
-      fetchJSON("/api/signal"),
-    ]);
+const SIGNAL_JP = {green:"\u6b63\u5e38\u904b\u8ee2\u4e2d",yellow:"\u627f\u8a8d\u5f85\u3061",red:"\u505c\u6b62\u4e2d"};
+function setSignal(s,r){document.getElementById("signalDot").className="signal-dot "+s;document.getElementById("signalLabel").textContent=SIGNAL_JP[s]||s;document.getElementById("signalDetail").textContent=r||"";}
+function setError(m){var b=document.getElementById("errorBanner");if(m){b.textContent=m;b.style.display="block";}else{b.style.display="none";}}
+function pct(n,d){return d>0?Math.min(100,Math.round(n/d*100)):0;}
+function updateTime(){var n=new Date();document.getElementById("updatedAt").textContent="Updated "+String(n.getHours()).padStart(2,"0")+":"+String(n.getMinutes()).padStart(2,"0");}
+async function fetchJSON(u){var r=await fetch(u);if(!r.ok)throw new Error(u+" -> "+r.status);return r.json();}
+async function refresh(){
+  try{
+    var d=await Promise.all([fetchJSON("/api/state"),fetchJSON("/api/signal")]);
+    var state=d[0],signal=d[1];
     setError(null);
-
-    // Signal
-    setSignal(signal.signal, signal.reason);
-
-    // Metrics
-    const b = state.budget || {};
-    document.getElementById("metricNight").textContent = state.current_night || "--";
-    document.getElementById("metricLlmDay").textContent = b.llm_calls_today ?? "-";
-    document.getElementById("metricLlmDayMax").textContent = b.max_llm_calls_per_day ?? 24;
-    document.getElementById("barLlmDay").style.width = pct(b.llm_calls_today, b.max_llm_calls_per_day) + "%";
-    const winCount = Array.isArray(b.llm_calls_window) ? b.llm_calls_window.length : 0;
-    document.getElementById("metricLlmWin").textContent = winCount;
-    document.getElementById("metricLlmWinMax").textContent = b.max_llm_calls_per_window ?? 8;
-    document.getElementById("barLlmWin").style.width = pct(winCount, b.max_llm_calls_per_window) + "%";
-
-    // Pending count
-    const pr = (state.pending_reviews || []).length;
-    const pt = (state.pending_tasks || []).length;
-    const total = pr + pt;
-    const pendingEl = document.getElementById("metricPending");
-    pendingEl.textContent = total + " items";
-    pendingEl.style.color = total > 0 ? "var(--yellow)" : "var(--green)";
-
-    // State details
-    const detailsEl = document.getElementById("stateDetails");
-    detailsEl.innerHTML = "";
-    const fields = [
-      ["Phase", state.phase],
-      ["Turn", state.turn],
-      ["Loop Status", state.loop_status],
-      ["Error Count", state.error_count],
-      ["Wakeups Today", b.wakeups_today],
-      ["Stop Reason", state.stop_reason || "none"],
-    ];
-    fields.forEach(([k, v]) => {
-      const row = document.createElement("div");
-      row.className = "row";
-      row.innerHTML = '<span class="row-title" style="color:var(--text-secondary)">' + k + '</span>'
-        + '<span class="row-meta" style="color:var(--text)">' + v + '</span>';
-      detailsEl.appendChild(row);
+    setSignal(signal.signal,signal.reason);
+    var b=state.budget||{};
+    document.getElementById("metricNight").textContent=state.current_night||"--";
+    document.getElementById("metricLlmDay").textContent=b.llm_calls_today!=null?b.llm_calls_today:"-";
+    document.getElementById("metricLlmDayMax").textContent=b.max_llm_calls_per_day||24;
+    document.getElementById("barLlmDay").style.width=pct(b.llm_calls_today,b.max_llm_calls_per_day)+"%";
+    var wc=Array.isArray(b.llm_calls_window)?b.llm_calls_window.length:0;
+    document.getElementById("metricLlmWin").textContent=wc;
+    document.getElementById("metricLlmWinMax").textContent=b.max_llm_calls_per_window||8;
+    document.getElementById("barLlmWin").style.width=pct(wc,b.max_llm_calls_per_window)+"%";
+    var pr=(state.pending_reviews||[]).length,pt=(state.pending_tasks||[]).length,tot=pr+pt;
+    var pe=document.getElementById("metricPending");
+    pe.textContent=tot+" items";pe.style.color=tot>0?"var(--yellow)":"var(--green)";
+    var de=document.getElementById("stateDetails");de.innerHTML="";
+    [["Phase",state.phase],["Turn",state.turn],["Loop Status",state.loop_status],["Error Count",state.error_count],["Wakeups Today",b.wakeups_today],["Stop Reason",state.stop_reason||"none"]].forEach(function(f){
+      var row=document.createElement("div");row.className="row";
+      row.innerHTML='<span class="row-title" style="color:var(--text-secondary)">'+f[0]+'</span><span class="row-meta" style="color:var(--text)">'+f[1]+'</span>';
+      de.appendChild(row);
     });
-
     updateTime();
-  } catch (err) {
-    setError("Failed to fetch: " + err.message);
-    setSignal("red", "API unreachable");
-  }
-
-  // Tasks (separate try, independent of state)
-  try {
-    const tasks = await fetchJSON("/tasks");
-    const container = document.getElementById("tasksList");
-    container.innerHTML = "";
-    const allTasks = [
-      ...(tasks.turn1 || []).map(t => ({...t, turn: "T1"})),
-      ...(tasks.turn2 || []).map(t => ({...t, turn: "T2"})),
-    ];
-    if (allTasks.length === 0) {
-      container.innerHTML = '<span class="loading">No tasks configured</span>';
-    }
-    allTasks.forEach(t => {
-      const row = document.createElement("div");
-      row.className = "row";
-      row.innerHTML = '<span class="tag tag-task">' + t.id + '</span>'
-        + '<span class="row-title">' + t.title + '</span>'
-        + '<span class="row-meta">' + (t.turn === "T1" ? "21:00 start" : "after T1 merge") + '</span>';
-      container.appendChild(row);
+  }catch(e){setError("Failed to fetch: "+e.message);setSignal("red","API unreachable");}
+  try{
+    var tasks=await fetchJSON("/tasks");
+    var tc=document.getElementById("tasksList");tc.innerHTML="";
+    var all=[].concat((tasks.turn1||[]).map(function(t){return Object.assign({},t,{turn:"T1"});}),(tasks.turn2||[]).map(function(t){return Object.assign({},t,{turn:"T2"});}));
+    if(all.length===0){tc.innerHTML='<span class="loading">No tasks configured</span>';}
+    all.forEach(function(t){
+      var row=document.createElement("div");row.className="row";
+      row.innerHTML='<span class="tag tag-task">'+t.id+'</span><span class="row-title">'+t.title+'</span><span class="row-meta">'+(t.turn==="T1"?"21:00 start":"after T1 merge")+'</span>';
+      tc.appendChild(row);
     });
-  } catch (err) {
-    document.getElementById("tasksList").innerHTML = '<span class="loading">Tasks unavailable</span>';
-  }
+  }catch(e){document.getElementById("tasksList").innerHTML='<span class="loading">Tasks unavailable</span>';}
+  try{
+    var prs=await fetchJSON("/api/prs");
+    var pc=document.getElementById("prsList");pc.innerHTML="";
+    if(prs.length===0){pc.innerHTML='<span class="loading">No recent PRs</span>';}
+    prs.slice(0,5).forEach(function(pr){
+      var row=document.createElement("div");row.className="row";
+      var merged=pr.state==="MERGED",open=pr.state==="OPEN";
+      var bc=merged?"badge-merged":open?"badge-open":"badge-merged";
+      var bt=merged?"merged":open?"open":pr.state.toLowerCase();
+      row.innerHTML='<span class="tag-pr">#'+pr.number+'</span><span class="row-title">'+pr.title+'</span><span class="badge '+bc+'">'+bt+'</span>';
+      pc.appendChild(row);
+    });
+  }catch(e){document.getElementById("prsList").innerHTML='<span class="loading">PRs unavailable</span>';}
 }
-
-// Initial load + 30s polling
-refresh();
-setInterval(refresh, 30000);
+refresh();setInterval(refresh,30000);
 </script>
 </body>
 </html>

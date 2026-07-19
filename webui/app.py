@@ -144,3 +144,31 @@ def dashboard():
     if not DASHBOARD_HTML.exists():
         return HTMLResponse("<h1>dashboard.html not found</h1>", status_code=404)
     return HTMLResponse(DASHBOARD_HTML.read_text(encoding="utf-8"))
+# ---------------------------------------------------------------------------
+# PR list via gh CLI
+# ---------------------------------------------------------------------------
+
+import subprocess
+import json as _json
+
+GH_CLI = r"C:\Program Files\GitHub CLI\gh.exe"
+GH_REPO = "a19156664-bot/jules-nightly-test"
+
+
+@app.get("/api/prs")
+def api_prs():
+    """Return recent PRs via gh CLI."""
+    try:
+        result = subprocess.run(
+            [GH_CLI, "pr", "list", "-R", GH_REPO,
+             "--state", "all", "--limit", "10",
+             "--json", "number,title,state,mergedAt,url"],
+            capture_output=True, text=True, timeout=15, encoding="utf-8",
+        )
+        if result.returncode != 0:
+            raise HTTPException(status_code=502, detail=result.stderr.strip())
+        return _json.loads(result.stdout)
+    except FileNotFoundError:
+        raise HTTPException(status_code=500, detail="gh CLI not found")
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="gh CLI timed out")
