@@ -1,20 +1,20 @@
-night: "2026-07-20"
+﻿night: "2026-07-21"
 turn1:
   - id: "T1-01"
-    title: "build_prompt.py の新規作成（プロンプト組み立て自動化）"
-    risk: "low"
-    paths:
-      - "commander/build_prompt.py"
-      - "tests/test_build_prompt.py"
-    prompt_file: ".nightly/prompts/2026-07-20-T1-01.md"
-turn2:
-  - id: "T2-01"
-    title: "state.yml 日次スナップショット機能の追加"
+    title: "スナップショット保持期間管理（最新14件保持、古いファイルを自動削除）"
     risk: "low"
     paths:
       - "commander/state_manager.py"
       - "tests/test_state_manager.py"
-    prompt_file: ".nightly/prompts/2026-07-20-T2-01.md"
+    prompt_file: ".nightly/prompts/2026-07-21-T1-01.md"
+turn2:
+  - id: "T2-01"
+    title: "--restore-snapshot CLI追加（スナップショットからstate復元）"
+    risk: "low"
+    paths:
+      - "commander/state_manager.py"
+      - "tests/test_state_manager.py"
+    prompt_file: ".nightly/prompts/2026-07-21-T2-01.md"
 test_paths:
   - "tests/"
 protected_paths:

@@ -1,4 +1,4 @@
-﻿# ===== Config =====
+# ===== Config =====
 $ErrorActionPreference = "Stop"
 $env:PYTHONIOENCODING = "utf-8"
 $RepoRoot = $PSScriptRoot | Split-Path -Parent
@@ -14,53 +14,43 @@ try {
         New-Item -ItemType Directory -Path $LogDir | Out-Null
     }
     # ===== Stage 0: pre-checks without LLM =====
-    $ShouldStop = & $Python "$PSScriptRoot\state_manager.py" --should-stop
+    $ShouldStop = & $Python -m commander.state_manager --should-stop
     if ($ShouldStop -like "True*") {
-        & $Python "$PSScriptRoot\state_manager.py" --record-wakeup "stopped"
+        & $Python -m commander.state_manager --record-wakeup "stopped"
         exit 0
     }
     $openPRs = (& $Gh pr list -R $Repo --state open --json number --jq 'length')
     $alertOpen = (& $Gh issue list -R $Repo --label loop-alert --state open --json number --jq 'length')
-    $turnDue = & $Python "$PSScriptRoot\state_manager.py" --check-turn-due
+    $turnDue = & $Python -m commander.state_manager --check-turn-due
     if ($openPRs -eq 0 -and $turnDue -like "False*") {
         if ($alertOpen -gt 0) {
-            & $Python "$PSScriptRoot\state_manager.py" --record-wakeup "alert-pending-human"
+            & $Python -m commander.state_manager --record-wakeup "alert-pending-human"
         } else {
-            & $Python "$PSScriptRoot\state_manager.py" --record-wakeup "no-work"
+            & $Python -m commander.state_manager --record-wakeup "no-work"
         }
         exit 0
     }
     # ===== Budget check (soft skip) =====
-    $CanCallLLM = & $Python "$PSScriptRoot\state_manager.py" --can-call-llm
+    $CanCallLLM = & $Python -m commander.state_manager --can-call-llm
     if ($CanCallLLM -like "False*") {
-        & $Python "$PSScriptRoot\state_manager.py" --record-wakeup "budget-deferred"
+        & $Python -m commander.state_manager --record-wakeup "budget-deferred"
         exit 0
     }
-    & $Python "$PSScriptRoot\state_manager.py" --record-wakeup "has-work"
+    & $Python -m commander.state_manager --record-wakeup "has-work"
     # ===== Stage 1: LLM call =====
-    $CommanderPath = Join-Path $RepoRoot ".nightly\COMMANDER.MD"
-    if (-not (Test-Path -Path $CommanderPath)) {
-        Write-Host "[SKIP] COMMANDER.MD not found"
+    $PromptFile = Join-Path $PSScriptRoot "current-prompt.txt"
+    & $Python -m commander.build_prompt --alert-count $alertOpen --output $PromptFile
+    if (-not (Test-Path -Path $PromptFile)) {
+        Write-Host "[SKIP] build_prompt.py failed to produce prompt file"
         exit 0
     }
-    $StatePath = Join-Path $PSScriptRoot "state.yml"
-    $SuffixPath = Join-Path $PSScriptRoot "prompt-suffix.txt"
-    $Prompt = Get-Content -Path $CommanderPath -Raw -Encoding UTF8
-    if (Test-Path -Path $StatePath) {
-        $Prompt += "`n---`n## state.yml:`n" + (Get-Content -Path $StatePath -Raw -Encoding UTF8)
-    }
-    if (Test-Path -Path $SuffixPath) {
-        $Prompt += "`n" + (Get-Content -Path $SuffixPath -Raw -Encoding UTF8)
-    }
-    $PromptFile = Join-Path $PSScriptRoot "current-prompt.txt"
-    $Prompt | Out-File -FilePath $PromptFile -Encoding UTF8
     $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
     $LogFile = Join-Path $LogDir "commander-$Timestamp.log"
     $PromptContent = Get-Content -Path $PromptFile -Raw -Encoding UTF8
     & $Claude -p $PromptContent --model $Model 2>&1 | Out-File -FilePath $LogFile -Encoding utf8
-    & $Python "$PSScriptRoot\state_manager.py" --record-llm-call
-    & $Python "$PSScriptRoot\parse_output.py" $LogFile
-    } catch {
+    & $Python -m commander.state_manager --record-llm-call
+    & $Python -m commander.parse_output $LogFile
+} catch {
     $ErrorMessage = $_.Exception.Message
     $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
     $LogDir = Join-Path $PSScriptRoot "logs"
@@ -69,6 +59,6 @@ try {
     }
     $LogFile = Join-Path $LogDir "commander-error-$Timestamp.log"
     $ErrorMessage | Out-File -FilePath $LogFile -Encoding utf8
-    & $Python "$PSScriptRoot\create_alert_issue.py" --alert-type "runtime-error" --summary "commander.ps1 crashed" --detail "$ErrorMessage"
+    & $Python -m commander.create_alert_issue --alert-type "runtime-error" --summary "commander.ps1 crashed" --detail "$ErrorMessage"
     exit 1
 }
