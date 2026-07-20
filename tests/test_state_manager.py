@@ -194,6 +194,51 @@ def test_reset_daily_if_needed(mock_datetime, mock_resolve_path, tmp_path):
     assert loaded["budget"]["llm_calls_today"] == 0
     assert loaded["budget"]["last_reset_date"] == "2023-10-02"
 
+@patch("commander.state_manager.resolve_path")
+def test_restore_snapshot_success(mock_resolve_path, tmp_path):
+    path = tmp_path / "state.yml"
+    manager = StateManager(str(path))
+
+    # Setup mock snapshot file
+    snapshot_path = tmp_path / "state-snapshot-2023-10-01.yml"
+    mock_resolve_path.return_value = snapshot_path
+
+    snapshot_data = get_default_state()
+    snapshot_data["version"] = 2
+    snapshot_data["stop_reason"] = "snapshot-stop"
+    snapshot_data["error_count"] = 1
+
+    with open(snapshot_path, "w", encoding="utf-8") as f:
+        yaml.dump(snapshot_data, f)
+
+    # Setup current state
+    current_state = get_default_state()
+    current_state["version"] = 1
+    current_state["stop_reason"] = "current-stop"
+    current_state["error_count"] = 3
+    manager.save(current_state)
+
+    success = manager.restore_snapshot("2023-10-01")
+    assert success is True
+
+    # Load and verify state
+    restored_state = manager.load()
+    assert restored_state["version"] == 2
+    assert restored_state["stop_reason"] == "snapshot-stop"
+    assert restored_state["error_count"] == 1
+
+@patch("commander.state_manager.resolve_path")
+def test_restore_snapshot_not_found(mock_resolve_path, tmp_path):
+    path = tmp_path / "state.yml"
+    manager = StateManager(str(path))
+
+    # Setup mock snapshot path that does not exist
+    snapshot_path = tmp_path / "state-snapshot-2023-10-01.yml"
+    mock_resolve_path.return_value = snapshot_path
+
+    success = manager.restore_snapshot("2023-10-01")
+    assert success is False
+
 
 @patch("commander.state_manager.resolve_path")
 @patch("commander.state_manager.datetime")

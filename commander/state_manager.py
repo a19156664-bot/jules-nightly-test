@@ -175,6 +175,29 @@ class StateManager:
 
         return False, None
 
+    def restore_snapshot(self, date_str: str) -> bool:
+        """
+        Restore state.yml from a specific snapshot date.
+        - Load the snapshot data.
+        - Do not modify stop_reason and error_count to prevent self-relaxation.
+        - Save the new state back.
+        Returns True if successful, False if the snapshot does not exist.
+        """
+        snapshot_path = resolve_path(f"commander/state-snapshot-{date_str}.yml")
+        if not snapshot_path.exists():
+            return False
+
+        try:
+            with open(snapshot_path, "r", encoding="utf-8") as f:
+                snapshot_data = yaml.safe_load(f)
+                if snapshot_data is None:
+                    snapshot_data = get_default_state()
+        except Exception:
+            return False
+
+        self.save(snapshot_data)
+        return True
+
     def reset_daily_if_needed(self) -> bool:
         """
         Check if the current day (JST) is different from budget.last_reset_date.
@@ -225,11 +248,21 @@ if __name__ == "__main__":
     parser.add_argument("--record-llm-call", action="store_true", help="Record an LLM call")
     parser.add_argument("--get", type=str, help="Get a value from state.yml by key")
     parser.add_argument("--check-turn-due", action="store_true", help="Check if turn is due (turn1 and >= 21:00 JST)")
+    parser.add_argument("--restore-snapshot", type=str, help="Restore state from snapshot by date (YYYY-MM-DD)")
 
     args = parser.parse_args()
     manager = StateManager()
 
-    if args.can_call_llm:
+    if args.restore_snapshot:
+        success = manager.restore_snapshot(args.restore_snapshot)
+        if success:
+            print(f"Restored from snapshot: {args.restore_snapshot}")
+            sys.exit(0)
+        else:
+            print(f"Snapshot not found for date: {args.restore_snapshot}", file=sys.stderr)
+            sys.exit(1)
+
+    elif args.can_call_llm:
         can_call, reason = manager.can_call_llm()
         if can_call:
             print("True")
