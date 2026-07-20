@@ -193,6 +193,16 @@ class StateManager:
                     snapshot_path = log_dir / f"state-snapshot-{last_reset}.yml"
                     with open(snapshot_path, "w", encoding="utf-8") as f:
                         yaml.dump(state, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
+                    try:
+                        snapshots = sorted(log_dir.glob("state-snapshot-*.yml"), key=lambda p: p.name, reverse=True)
+                        for old_snapshot in snapshots[14:]:
+                            try:
+                                old_snapshot.unlink()
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
                 except Exception:
                     pass
 
