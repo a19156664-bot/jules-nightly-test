@@ -54,11 +54,11 @@ try {
     }
     $PromptFile = Join-Path $PSScriptRoot "current-prompt.txt"
     $Prompt | Out-File -FilePath $PromptFile -Encoding UTF8
-    $Result = & $Claude -p (Get-Content -Path $PromptFile -Raw -Encoding UTF8) --model $Model
-    & $Python "$PSScriptRoot\state_manager.py" --record-llm-call
     $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
     $LogFile = Join-Path $LogDir "commander-$Timestamp.log"
-    $Result | Out-File -FilePath $LogFile -Encoding utf8
+    $PromptContent = Get-Content -Path $PromptFile -Raw -Encoding UTF8
+    & $Claude -p $PromptContent --model $Model 2>&1 | Out-File -FilePath $LogFile -Encoding utf8
+    & $Python "$PSScriptRoot\state_manager.py" --record-llm-call
     & $Python "$PSScriptRoot\parse_output.py" $LogFile
     } catch {
     $ErrorMessage = $_.Exception.Message
