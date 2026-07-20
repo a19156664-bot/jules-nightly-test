@@ -1,8 +1,21 @@
 import os
+import sys
 import yaml
 import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
+
+# sys.path adjustment to allow running as CLI (python commander/state_manager.py)
+repo_root = Path(__file__).parent.parent.resolve()
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
+
+from commander.config import (
+    STATE_FILE,
+    MAX_LLM_CALLS_PER_DAY,
+    MAX_LLM_CALLS_PER_WINDOW,
+    WINDOW_HOURS,
+)
 
 JST = datetime.timezone(datetime.timedelta(hours=9))
 
@@ -25,9 +38,9 @@ def get_default_state() -> Dict[str, Any]:
         "error_count": 0,
         "budget": {
             "llm_calls_today": 0,
-            "max_llm_calls_per_day": 24,
+            "max_llm_calls_per_day": MAX_LLM_CALLS_PER_DAY,
             "llm_calls_window": [],
-            "max_llm_calls_per_window": 8,
+            "max_llm_calls_per_window": MAX_LLM_CALLS_PER_WINDOW,
             "wakeups_today": 0,
             "last_reset_date": None
         },
@@ -35,7 +48,7 @@ def get_default_state() -> Dict[str, Any]:
     }
 
 class StateManager:
-    def __init__(self, path: str = "commander/state.yml"):
+    def __init__(self, path: str = STATE_FILE):
         """Initialize the StateManager with a given file path."""
         self.path = Path(path)
 
@@ -119,7 +132,7 @@ class StateManager:
     def can_call_llm(self) -> Tuple[bool, Optional[str]]:
         """
         Check if LLM can be called.
-        - Removes entries from llm_calls_window older than 5 hours.
+        - Removes entries from llm_calls_window older than WINDOW_HOURS hours.
         - Checks daily limit.
         - Checks window limit.
         - Checks if stop_reason is non-null.
@@ -131,19 +144,19 @@ class StateManager:
             return False, f"stopped: {stop_reason}"
 
         calls_today = self.get("budget.llm_calls_today", 0)
-        max_daily = self.get("budget.max_llm_calls_per_day", 24)
+        max_daily = MAX_LLM_CALLS_PER_DAY
         if calls_today >= max_daily:
             return False, "daily-budget-exceeded"
 
         window = self.get("budget.llm_calls_window", [])
         now_jst = datetime.datetime.now(JST)
-        five_hours_ago = now_jst - datetime.timedelta(hours=5)
+        window_start = now_jst - datetime.timedelta(hours=WINDOW_HOURS)
 
         filtered_window = []
         for ts_str in window:
             try:
                 ts = datetime.datetime.fromisoformat(ts_str)
-                if ts >= five_hours_ago:
+                if ts >= window_start:
                     filtered_window.append(ts_str)
             except ValueError:
                 pass
@@ -151,7 +164,7 @@ class StateManager:
         if len(filtered_window) != len(window):
             self.update({"budget.llm_calls_window": filtered_window})
 
-        max_window = self.get("budget.max_llm_calls_per_window", 8)
+        max_window = MAX_LLM_CALLS_PER_WINDOW
         if len(filtered_window) >= max_window:
             return False, "window-budget-exceeded"
 

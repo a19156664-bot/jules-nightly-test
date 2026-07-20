@@ -3,6 +3,7 @@ import os
 import yaml
 import datetime
 from commander.state_manager import StateManager, get_default_state, JST
+from commander import config
 
 def test_load_default(tmp_path):
     # Test that load() returns default structure when file does not exist
@@ -87,8 +88,8 @@ def test_can_call_llm_daily_budget_exceeded(tmp_path):
     manager = StateManager(str(path))
     today_str = datetime.datetime.now(JST).strftime("%Y-%m-%d")
     manager.update({
-        "budget.llm_calls_today": 24,
-        "budget.max_llm_calls_per_day": 24,
+        "budget.llm_calls_today": config.MAX_LLM_CALLS_PER_DAY,
+        "budget.max_llm_calls_per_day": config.MAX_LLM_CALLS_PER_DAY,
         "budget.last_reset_date": today_str
     })
 
@@ -100,13 +101,13 @@ def test_can_call_llm_window_budget_exceeded(tmp_path):
     path = tmp_path / "state.yml"
     manager = StateManager(str(path))
     now = datetime.datetime.now(JST)
-    window = [(now - datetime.timedelta(hours=1)).isoformat() for _ in range(8)]
+    window = [(now - datetime.timedelta(hours=1)).isoformat() for _ in range(config.MAX_LLM_CALLS_PER_WINDOW)]
     today_str = now.strftime("%Y-%m-%d")
     manager.update({
         "budget.llm_calls_today": 10,
-        "budget.max_llm_calls_per_day": 24,
+        "budget.max_llm_calls_per_day": config.MAX_LLM_CALLS_PER_DAY,
         "budget.llm_calls_window": window,
-        "budget.max_llm_calls_per_window": 8,
+        "budget.max_llm_calls_per_window": config.MAX_LLM_CALLS_PER_WINDOW,
         "budget.last_reset_date": today_str
     })
 
@@ -119,10 +120,10 @@ def test_can_call_llm_window_filtering(tmp_path):
     manager = StateManager(str(path))
     now = datetime.datetime.now(JST)
 
-    # 8 entries total: 4 old (>5h), 4 recent
+    # 8 entries total: 4 old (>WINDOW_HOURS), 4 recent
     window = []
     for _ in range(4):
-        window.append((now - datetime.timedelta(hours=6)).isoformat())
+        window.append((now - datetime.timedelta(hours=config.WINDOW_HOURS + 1)).isoformat())
     for _ in range(4):
         window.append((now - datetime.timedelta(hours=1)).isoformat())
 
@@ -130,15 +131,21 @@ def test_can_call_llm_window_filtering(tmp_path):
     manager.update({
         "budget.llm_calls_today": 10,
         "budget.llm_calls_window": window,
-        "budget.max_llm_calls_per_window": 8,
+        "budget.max_llm_calls_per_window": config.MAX_LLM_CALLS_PER_WINDOW,
         "budget.last_reset_date": today_str
     })
 
     allowed, reason = manager.can_call_llm()
-    assert allowed is True  # Only 4 recent entries should remain, < 8
+    assert allowed is True  # Only 4 recent entries should remain, < max_window
 
     loaded = manager.load()
     assert len(loaded["budget"]["llm_calls_window"]) == 4
+
+def test_state_manager_constants_match_config():
+    """Test that default state and StateManager rely on config.py constants."""
+    default_state = get_default_state()
+    assert default_state["budget"]["max_llm_calls_per_day"] == config.MAX_LLM_CALLS_PER_DAY
+    assert default_state["budget"]["max_llm_calls_per_window"] == config.MAX_LLM_CALLS_PER_WINDOW
 
 def test_should_stop(tmp_path):
     path = tmp_path / "state.yml"
