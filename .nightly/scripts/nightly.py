@@ -484,12 +484,17 @@ def cmd_start_night(_args) -> int:
                     "古いマニフェストの誤発火防止です。")
         return 0
     branch = branch_name(m)
-    if gh_branch_exists(branch):
-        add_summary(f"## ⏭ {branch} は既に存在します。今夜は開始済みです。"
-                    "やり直す場合はブランチを削除して tasks.yml を再コミットしてください。")
-        return 0
-    gh_create_branch_from_main(branch)
-    log(f"created branch {branch}")
+    branch_existed = gh_branch_exists(branch)
+    if branch_existed:
+        turn1_log = gh_get_json(branch, f".nightly/logs/{m['night']}-turn1.json")
+        if turn1_log is not None:
+            add_summary(f"## ⏭ {branch} は既に存在し、T1投入済みです。"
+                        "やり直す場合はブランチを削除して tasks.yml を再コミットしてください。")
+            return 0
+        log(f"{branch} は存在しますがT1未投入です。既存ブランチ上でT1を投入します。")
+    else:
+        gh_create_branch_from_main(branch)
+    log(f"{'reusing' if branch_existed else 'created'} branch {branch}")
     results = launch_tasks(m, m["turn1"], branch)
     try:
         gh_put_file(branch, f".nightly/logs/{m['night']}-turn1.json",
