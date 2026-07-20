@@ -3,6 +3,7 @@ import yaml
 import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
+from commander.config import LOG_DIR, resolve_path
 
 JST = datetime.timezone(datetime.timedelta(hours=9))
 
@@ -184,6 +185,17 @@ class StateManager:
         today_str = datetime.datetime.now(JST).strftime("%Y-%m-%d")
 
         if last_reset != today_str:
+            if last_reset is not None:
+                try:
+                    state = self.load()
+                    log_dir = resolve_path(LOG_DIR)
+                    log_dir.mkdir(parents=True, exist_ok=True)
+                    snapshot_path = log_dir / f"state-snapshot-{last_reset}.yml"
+                    with open(snapshot_path, "w", encoding="utf-8") as f:
+                        yaml.dump(state, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+                except Exception:
+                    pass
+
             self.update({
                 "budget.llm_calls_today": 0,
                 "budget.wakeups_today": 0,
