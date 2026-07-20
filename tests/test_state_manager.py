@@ -160,9 +160,12 @@ def test_should_stop(tmp_path):
     assert stop is True
     assert reason == "consecutive-errors"
 
+@patch("commander.state_manager.resolve_path")
 @patch("commander.state_manager.datetime")
-def test_reset_daily_if_needed(mock_datetime, tmp_path):
+def test_reset_daily_if_needed(mock_datetime, mock_resolve_path, tmp_path):
     path = tmp_path / "state.yml"
+    log_dir = tmp_path / "logs"
+    mock_resolve_path.return_value = log_dir
     manager = StateManager(str(path))
 
     # Setup mock datetime
@@ -187,6 +190,115 @@ def test_reset_daily_if_needed(mock_datetime, tmp_path):
     mock_datetime.datetime.now.return_value = mock_now_next
 
     assert manager.reset_daily_if_needed() is True
+    loaded = manager.load()
+    assert loaded["budget"]["llm_calls_today"] == 0
+    assert loaded["budget"]["last_reset_date"] == "2023-10-02"
+
+
+@patch("commander.state_manager.resolve_path")
+@patch("commander.state_manager.datetime")
+def test_snapshot_created_on_daily_reset(mock_datetime, mock_resolve_path, tmp_path):
+    path = tmp_path / "state.yml"
+    log_dir = tmp_path / "logs"
+    mock_resolve_path.return_value = log_dir
+    manager = StateManager(str(path))
+
+    mock_datetime.timezone = datetime.timezone
+    mock_datetime.timedelta = datetime.timedelta
+
+    # Initialize state with a previous date
+    manager.update({
+        "budget.llm_calls_today": 10,
+        "budget.last_reset_date": "2023-10-01"
+    })
+
+    mock_now_next = datetime.datetime(2023, 10, 2, 12, 0, 0, tzinfo=JST)
+    mock_datetime.datetime.now.return_value = mock_now_next
+
+    assert manager.reset_daily_if_needed() is True
+
+    # Check if snapshot is created
+    snapshot_path = log_dir / "state-snapshot-2023-10-01.yml"
+    assert snapshot_path.exists()
+
+@patch("commander.state_manager.resolve_path")
+@patch("commander.state_manager.datetime")
+def test_snapshot_content_matches_pre_reset_state(mock_datetime, mock_resolve_path, tmp_path):
+    path = tmp_path / "state.yml"
+    log_dir = tmp_path / "logs"
+    mock_resolve_path.return_value = log_dir
+    manager = StateManager(str(path))
+
+    mock_datetime.timezone = datetime.timezone
+    mock_datetime.timedelta = datetime.timedelta
+
+    # Initialize state with a previous date
+    manager.update({
+        "budget.llm_calls_today": 15,
+        "budget.last_reset_date": "2023-10-01"
+    })
+
+    mock_now_next = datetime.datetime(2023, 10, 2, 12, 0, 0, tzinfo=JST)
+    mock_datetime.datetime.now.return_value = mock_now_next
+
+    assert manager.reset_daily_if_needed() is True
+
+    # Read snapshot
+    snapshot_path = log_dir / "state-snapshot-2023-10-01.yml"
+    with open(snapshot_path, "r", encoding="utf-8") as f:
+        snapshot_data = yaml.safe_load(f)
+
+    assert snapshot_data["budget"]["llm_calls_today"] == 15
+    assert snapshot_data["budget"]["last_reset_date"] == "2023-10-01"
+
+@patch("commander.state_manager.resolve_path")
+@patch("commander.state_manager.datetime")
+def test_snapshot_skipped_when_no_last_reset_date(mock_datetime, mock_resolve_path, tmp_path):
+    path = tmp_path / "state.yml"
+    log_dir = tmp_path / "logs"
+    mock_resolve_path.return_value = log_dir
+    manager = StateManager(str(path))
+
+    mock_datetime.timezone = datetime.timezone
+    mock_datetime.timedelta = datetime.timedelta
+
+    # Initial state (no reset date)
+    mock_now = datetime.datetime(2023, 10, 1, 12, 0, 0, tzinfo=JST)
+    mock_datetime.datetime.now.return_value = mock_now
+
+    assert manager.reset_daily_if_needed() is True
+
+    # Snapshot should not be created
+    assert not log_dir.exists() or len(list(log_dir.glob("state-snapshot-*.yml"))) == 0
+
+@patch("commander.state_manager.resolve_path")
+@patch("commander.state_manager.datetime")
+def test_snapshot_failure_does_not_block_reset(mock_datetime, mock_resolve_path, tmp_path):
+    path = tmp_path / "state.yml"
+    log_dir = tmp_path / "logs"
+
+    # Make log_dir a file so mkdir fails
+    log_dir.touch()
+
+    mock_resolve_path.return_value = log_dir
+    manager = StateManager(str(path))
+
+    mock_datetime.timezone = datetime.timezone
+    mock_datetime.timedelta = datetime.timedelta
+
+    # Initialize state with a previous date
+    manager.update({
+        "budget.llm_calls_today": 12,
+        "budget.last_reset_date": "2023-10-01"
+    })
+
+    mock_now_next = datetime.datetime(2023, 10, 2, 12, 0, 0, tzinfo=JST)
+    mock_datetime.datetime.now.return_value = mock_now_next
+
+    # Should not raise exception
+    assert manager.reset_daily_if_needed() is True
+
+    # Reset should be completed despite snapshot failure
     loaded = manager.load()
     assert loaded["budget"]["llm_calls_today"] == 0
     assert loaded["budget"]["last_reset_date"] == "2023-10-02"
