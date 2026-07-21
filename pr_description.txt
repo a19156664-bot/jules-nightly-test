@@ -1,0 +1,32 @@
+## 完了条件との対応表
+| 完了条件 | 対応状況 | 備考 |
+| --- | --- | --- |
+| `python -m commander.validate_proposal <proposal-dir>` で実行できること | 完了 | `validate_proposal.py` の `__main__` ブロックで引数を処理 |
+| 全パス時 exit code 0、失格時 1 | 完了 | `sys.exit(0)` / `sys.exit(1)` で制御 |
+| (a) tasks.yml 存在 & YAML パース可能 | 完了 | `yaml.safe_load` を使用、例外ハンドリング追加 |
+| (b) 必須キー `night`, `turn1`, `turn2`, `protected_paths` 確認 | 完了 | `required_keys - set(data.keys())` でチェック |
+| (c) `night` の YYYY-MM-DD 形式検証 | 完了 | 正規表現 `^\d{4}-\d{2}-\d{2}$` を使用 |
+| (d) タスクの必須フィールド検証 | 完了 | 各タスクのディクショナリ内でキーの存在をチェック |
+| (e) `risk` が `low`, `medium`, `high` いずれか | 完了 | 定数セット `VALID_RISKS` でチェック |
+| (f) `paths` に protected パスを含まないこと | 完了 | `.nightly/`, `.github/` と `AGENTS.md` をハードコードリストでチェック |
+| (g) `prompt_file` に対応するプロンプトファイルが存在 | 完了 | 正規表現でファイル名 `Tx-xx.md` 抽出しディレクトリ内を検索 |
+| 検証結果を stdout に複数出力 | 完了 | エラーリストに追加後、`VALIDATION: FAIL` 以下で `- <理由>` で出力 |
+| 不正時や非存在時は例外なく 1 で終了 | 完了 | ディレクトリやファイルの is_dir() や is_file() と try-except パースで対応 |
+| `tests/test_validate_proposal.py` 追加 | 完了 | `tmp_path` と `subprocess` で CLI 形式としてテスト実施 |
+
+## 変更ファイル一覧と理由
+- `commander/validate_proposal.py`: 新規作成。proposal ディレクトリの構造、YAML スキーマ、制約を検証するロジックを実装。
+- `tests/test_validate_proposal.py`: 新規作成。`pytest` で全ルールに対するエッジケースを検証するためのテストコードを追加。
+
+## テスト実行結果
+```
+ tests/test_validate_proposal.py ..........
+ ============================== 10 passed in 1.04s ==============================
+
+ bash .nightly/ci.sh
+ ======================== 72 passed, 1 warning in 2.49s =========================
+```
+全てのテストが PASS していることを確認しました。
+
+## 未確定事項
+特になし
