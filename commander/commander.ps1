@@ -22,7 +22,8 @@ try {
     $openPRs = (& $Gh pr list -R $Repo --state open --json number --jq 'length')
     $alertOpen = (& $Gh issue list -R $Repo --label loop-alert --state open --json number --jq 'length')
     $turnDue = & $Python -m commander.state_manager --check-turn-due
-    if ($openPRs -eq 0 -and $turnDue -like "False*") {
+    $turn = & $Python -m commander.state_manager --get turn
+    if ($openPRs -eq 0 -and $turnDue -like "False*" -and $turn -notlike "complete*") {
         if ($alertOpen -gt 0) {
             & $Python -m commander.state_manager --record-wakeup "alert-pending-human"
         } else {
