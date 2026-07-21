@@ -194,6 +194,51 @@ def test_reset_daily_if_needed(mock_datetime, mock_resolve_path, tmp_path):
     assert loaded["budget"]["llm_calls_today"] == 0
     assert loaded["budget"]["last_reset_date"] == "2023-10-02"
 
+@patch("commander.state_manager.resolve_path")
+def test_restore_snapshot_success(mock_resolve_path, tmp_path):
+    path = tmp_path / "state.yml"
+    manager = StateManager(str(path))
+
+    # Setup mock snapshot file
+    snapshot_path = tmp_path / "state-snapshot-2023-10-01.yml"
+    mock_resolve_path.return_value = snapshot_path
+
+    snapshot_data = get_default_state()
+    snapshot_data["version"] = 2
+    snapshot_data["stop_reason"] = "snapshot-stop"
+    snapshot_data["error_count"] = 1
+
+    with open(snapshot_path, "w", encoding="utf-8") as f:
+        yaml.dump(snapshot_data, f)
+
+    # Setup current state
+    current_state = get_default_state()
+    current_state["version"] = 1
+    current_state["stop_reason"] = "current-stop"
+    current_state["error_count"] = 3
+    manager.save(current_state)
+
+    success = manager.restore_snapshot("2023-10-01")
+    assert success is True
+
+    # Load and verify state
+    restored_state = manager.load()
+    assert restored_state["version"] == 2
+    assert restored_state["stop_reason"] == "snapshot-stop"
+    assert restored_state["error_count"] == 1
+
+@patch("commander.state_manager.resolve_path")
+def test_restore_snapshot_not_found(mock_resolve_path, tmp_path):
+    path = tmp_path / "state.yml"
+    manager = StateManager(str(path))
+
+    # Setup mock snapshot path that does not exist
+    snapshot_path = tmp_path / "state-snapshot-2023-10-01.yml"
+    mock_resolve_path.return_value = snapshot_path
+
+    success = manager.restore_snapshot("2023-10-01")
+    assert success is False
+
 
 @patch("commander.state_manager.resolve_path")
 @patch("commander.state_manager.datetime")
@@ -270,6 +315,44 @@ def test_snapshot_skipped_when_no_last_reset_date(mock_datetime, mock_resolve_pa
 
     # Snapshot should not be created
     assert not log_dir.exists() or len(list(log_dir.glob("state-snapshot-*.yml"))) == 0
+
+@patch("commander.state_manager.resolve_path")
+@patch("commander.state_manager.datetime")
+def test_snapshot_retention_keeps_latest_14(mock_datetime, mock_resolve_path, tmp_path):
+    path = tmp_path / "state.yml"
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    mock_resolve_path.return_value = log_dir
+    manager = StateManager(str(path))
+
+    mock_datetime.timezone = datetime.timezone
+    mock_datetime.timedelta = datetime.timedelta
+
+    # Create 15 dummy snapshots (older dates)
+    for i in range(1, 16):
+        dummy_file = log_dir / f"state-snapshot-2023-09-{i:02d}.yml"
+        dummy_file.touch()
+
+    # Initialize state with a previous date
+    manager.update({
+        "budget.llm_calls_today": 10,
+        "budget.last_reset_date": "2023-10-01"
+    })
+
+    # Trigger reset for the next day, which creates the 16th snapshot (state-snapshot-2023-10-01.yml)
+    # and then should delete the oldest 2 snapshots.
+    mock_now_next = datetime.datetime(2023, 10, 2, 12, 0, 0, tzinfo=JST)
+    mock_datetime.datetime.now.return_value = mock_now_next
+
+    assert manager.reset_daily_if_needed() is True
+
+    # Check remaining snapshots in log_dir
+    snapshots = sorted(list(log_dir.glob("state-snapshot-*.yml")), key=lambda p: p.name)
+    assert len(snapshots) == 14
+
+    # The remaining should be from 2023-09-03 to 2023-09-15, plus 2023-10-01
+    assert snapshots[0].name == "state-snapshot-2023-09-03.yml"
+    assert snapshots[-1].name == "state-snapshot-2023-10-01.yml"
 
 @patch("commander.state_manager.resolve_path")
 @patch("commander.state_manager.datetime")
