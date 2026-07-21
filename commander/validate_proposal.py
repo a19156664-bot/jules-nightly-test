@@ -103,6 +103,16 @@ def validate_proposal(proposal_dir_str):
                         expected_filepath = proposal_dir / expected_filename
                         if not expected_filepath.is_file():
                             errors.append(f"Task {task_id} in {turn} specifies prompt_file '{prompt_file}', but {expected_filename} does not exist in {proposal_dir_str}")
+                        else:
+                            try:
+                                with open(expected_filepath, "r", encoding="utf-8") as pf:
+                                    lines = [line.strip() for line in pf.readlines()]
+                                required_sections = ["## 完了条件", "## 変更可能ファイル", "## 変更禁止ファイル"]
+                                for section in required_sections:
+                                    if section not in lines:
+                                        errors.append(f"{expected_filename} is missing required section: {section}")
+                            except Exception as e:
+                                errors.append(f"Failed to read {expected_filename}: {e}")
                     else:
                         errors.append(f"Task {task_id} in {turn} specifies prompt_file '{prompt_file}', which does not end with 'Tx-xx.md'")
 
