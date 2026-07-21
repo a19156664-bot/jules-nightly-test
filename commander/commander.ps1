@@ -1,6 +1,7 @@
 # ===== Config =====
 $ErrorActionPreference = "Stop"
 $env:PYTHONIOENCODING = "utf-8"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $RepoRoot = $PSScriptRoot | Split-Path -Parent
 $Model    = "claude-opus-4-8"
 $Repo     = "a19156664-bot/jules-nightly-test"
