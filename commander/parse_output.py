@@ -32,6 +32,54 @@ FIELD_PATTERN = re.compile(
     re.MULTILINE,
 )
 
+PROPOSAL_PATTERN = re.compile(
+    r"^PROPOSAL_FILE:\s*(.+?)\s*\n<<<CONTENT[ \t]*\n(.*?)?\n?>>>END_PROPOSAL[ \t]*$",
+    re.MULTILINE | re.DOTALL,
+)
+
+
+def write_proposals(text: str) -> None:
+    """Find PROPOSAL_FILE blocks in the LLM output and write them to disk.
+
+    Safe-guards:
+    - Path must not contain '..'
+    - Path must start with 'commander/proposals/'
+    """
+    repo_root = Path(__file__).resolve().parent.parent
+
+    for match in PROPOSAL_PATTERN.finditer(text):
+        rel_path_str = match.group(1).strip()
+        content = match.group(2)
+        if content is None:
+            content = ""
+
+        # Validate path
+        if ".." in rel_path_str:
+            print(f"WARN: Rejected proposal path with directory traversal: {rel_path_str}", file=sys.stderr)
+            continue
+
+        if not rel_path_str.startswith("commander/proposals/"):
+            print(f"WARN: Rejected proposal path outside commander/proposals/: {rel_path_str}", file=sys.stderr)
+            continue
+
+        target_path = repo_root / rel_path_str
+
+        # Ensure it resolves under commander/proposals just to be extra safe
+        proposals_dir = repo_root / "commander" / "proposals"
+        try:
+            target_path_resolved = target_path.resolve()
+            proposals_dir_resolved = proposals_dir.resolve()
+            if not target_path_resolved.is_relative_to(proposals_dir_resolved):
+                print(f"WARN: Rejected proposal path escaping proposals dir: {rel_path_str}", file=sys.stderr)
+                continue
+        except ValueError:
+            print(f"WARN: Invalid proposal path: {rel_path_str}", file=sys.stderr)
+            continue
+
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_text(content, encoding="utf-8")
+        print(f"PROPOSAL: wrote {rel_path_str}")
+
 
 def parse_output(text: str) -> dict[str, str] | None:
     """Extract ACTION/TARGET/RESULT/DETAIL/STATE_UPDATE from LLM output.
@@ -81,6 +129,9 @@ def main() -> int:
     fields = parse_output(text)
 
     sm = StateManager()
+
+    # Always try to write proposals first, then process standard action parsing.
+    write_proposals(text)
 
     if fields is None:
         print("WARN: could not parse ACTION/RESULT from LLM output", file=sys.stderr)

@@ -105,3 +105,111 @@ class TestUpdateState:
         update_state(fields, sm)
         assert sm.get("error_count") == 1
         assert sm.get("last_action.type") == "no-action-needed"
+
+class TestWriteProposals:
+    def test_single_proposal(self, tmp_path, monkeypatch, capsys):
+        from commander.parse_output import write_proposals
+
+        # Mock __file__ so repo_root resolves to tmp_path
+        monkeypatch.setattr("commander.parse_output.__file__", str(tmp_path / "commander" / "parse_output.py"))
+
+        text = """PROPOSAL_FILE: commander/proposals/2026-07-22/tasks.yml
+<<<CONTENT
+night: "2026-07-22"
+turn1:
+  - id: "T1-01"
+>>>END_PROPOSAL"""
+
+        write_proposals(text)
+
+        target_file = tmp_path / "commander" / "proposals" / "2026-07-22" / "tasks.yml"
+        assert target_file.exists()
+        assert target_file.read_text(encoding="utf-8") == 'night: "2026-07-22"\nturn1:\n  - id: "T1-01"'
+
+        out, err = capsys.readouterr()
+        assert "PROPOSAL: wrote commander/proposals/2026-07-22/tasks.yml" in out
+        assert err == ""
+
+    def test_multiple_proposals(self, tmp_path, monkeypatch, capsys):
+        from commander.parse_output import write_proposals
+        monkeypatch.setattr("commander.parse_output.__file__", str(tmp_path / "commander" / "parse_output.py"))
+
+        text = """PROPOSAL_FILE: commander/proposals/2026-07-22/tasks.yml
+<<<CONTENT
+night: "2026-07-22"
+>>>END_PROPOSAL
+Some random text here
+PROPOSAL_FILE: commander/proposals/2026-07-22/T1-01.md
+<<<CONTENT
+# Task 1
+>>>END_PROPOSAL
+PROPOSAL_FILE: commander/proposals/2026-07-22/T2-01.md
+<<<CONTENT
+# Task 2
+>>>END_PROPOSAL"""
+
+        write_proposals(text)
+
+        proposals_dir = tmp_path / "commander" / "proposals" / "2026-07-22"
+        assert (proposals_dir / "tasks.yml").read_text(encoding="utf-8") == 'night: "2026-07-22"'
+        assert (proposals_dir / "T1-01.md").read_text(encoding="utf-8") == '# Task 1'
+        assert (proposals_dir / "T2-01.md").read_text(encoding="utf-8") == '# Task 2'
+
+    def test_reject_invalid_path_outside_proposals(self, tmp_path, monkeypatch, capsys):
+        from commander.parse_output import write_proposals
+        monkeypatch.setattr("commander.parse_output.__file__", str(tmp_path / "commander" / "parse_output.py"))
+
+        text = """PROPOSAL_FILE: .nightly/tasks.yml
+<<<CONTENT
+hacked
+>>>END_PROPOSAL"""
+        write_proposals(text)
+
+        assert not (tmp_path / ".nightly" / "tasks.yml").exists()
+        out, err = capsys.readouterr()
+        assert "WARN: Rejected proposal path outside commander/proposals/: .nightly/tasks.yml" in err
+
+    def test_reject_directory_traversal(self, tmp_path, monkeypatch, capsys):
+        from commander.parse_output import write_proposals
+        monkeypatch.setattr("commander.parse_output.__file__", str(tmp_path / "commander" / "parse_output.py"))
+
+        text = """PROPOSAL_FILE: commander/proposals/../../.nightly/tasks.yml
+<<<CONTENT
+hacked
+>>>END_PROPOSAL"""
+        write_proposals(text)
+
+        assert not (tmp_path / ".nightly" / "tasks.yml").exists()
+        out, err = capsys.readouterr()
+        assert "WARN: Rejected proposal path with directory traversal:" in err
+
+    def test_no_proposals_does_not_break_existing_behavior(self):
+        from commander.parse_output import parse_output
+        text = """ACTION: read
+RESULT: success"""
+        fields = parse_output(text)
+        assert fields["action"] == "read"
+        assert fields["result"] == "success"
+
+    def test_mixed_output(self, tmp_path, monkeypatch):
+        from commander.parse_output import parse_output, write_proposals
+        monkeypatch.setattr("commander.parse_output.__file__", str(tmp_path / "commander" / "parse_output.py"))
+
+        text = """ACTION: review-pr
+RESULT: success
+DETAIL: PR looks good
+PROPOSAL_FILE: commander/proposals/2026-07-22/tasks.yml
+<<<CONTENT
+night: "2026-07-22"
+>>>END_PROPOSAL"""
+
+        # Test parsing fields still works
+        fields = parse_output(text)
+        assert fields["action"] == "review-pr"
+        assert fields["result"] == "success"
+
+        # Test proposal writing still works
+        write_proposals(text)
+        target_file = tmp_path / "commander" / "proposals" / "2026-07-22" / "tasks.yml"
+        assert target_file.exists()
+        assert target_file.read_text(encoding="utf-8") == 'night: "2026-07-22"'
