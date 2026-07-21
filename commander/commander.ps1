@@ -51,7 +51,40 @@ try {
     $PromptContent = Get-Content -Path $PromptFile -Raw -Encoding UTF8
     & $Claude -p $PromptContent --model $Model 2>&1 | Out-File -FilePath $LogFile -Encoding utf8
     & $Python -m commander.state_manager --record-llm-call
-    & $Python -m commander.parse_output $LogFile
+    $ParseResult = & $Python -m commander.parse_output $LogFile 2>&1
+    foreach ($line in $ParseResult) {
+        Write-Host $line
+        $line | Out-File -FilePath $LogFile -Append -Encoding utf8
+    }
+
+    $ProposalDirs = @()
+    foreach ($line in $ParseResult) {
+        if ($line -match "^PROPOSAL:\s*wrote\s+(.+)$") {
+            $PathStr = $matches[1]
+            $FullPath = Join-Path $RepoRoot $PathStr
+            $Dir = Split-Path $FullPath -Parent
+            if ($ProposalDirs -notcontains $Dir) {
+                $ProposalDirs += $Dir
+            }
+        }
+    }
+
+    $PrevErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+
+    foreach ($dir in $ProposalDirs) {
+        $ValResult = & $Python -m commander.validate_proposal $dir 2>&1
+        $ValExitCode = $LASTEXITCODE
+        foreach ($line in $ValResult) {
+            Write-Host $line
+            $line | Out-File -FilePath $LogFile -Append -Encoding utf8
+        }
+        $ExitMsg = "Validation Exit Code: $ValExitCode"
+        Write-Host $ExitMsg
+        $ExitMsg | Out-File -FilePath $LogFile -Append -Encoding utf8
+    }
+
+    $ErrorActionPreference = $PrevErrorActionPreference
 } catch {
     $ErrorMessage = $_.Exception.Message
     $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
