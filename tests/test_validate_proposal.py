@@ -13,9 +13,9 @@ def run_validator(proposal_dir):
     )
     return result
 
-def create_proposal(tmp_path, tasks_data=None, prompt_files=None):
-    proposal_dir = tmp_path / "proposal"
-    proposal_dir.mkdir()
+def create_proposal(tmp_path, tasks_data=None, prompt_files=None, dir_name="proposal"):
+    proposal_dir = tmp_path / dir_name
+    proposal_dir.mkdir(parents=True, exist_ok=True)
 
     if tasks_data is not None:
         with open(proposal_dir / "tasks.yml", "w", encoding="utf-8") as f:
@@ -127,3 +127,25 @@ def test_missing_tasks_yml(tmp_path):
     assert result.returncode == 1
     assert "VALIDATION: FAIL" in result.stdout
     assert "tasks.yml not found in" in result.stdout
+
+def test_night_matches_directory_name(tmp_path, valid_tasks_data):
+    valid_tasks_data["night"] = "2026-07-23"
+    proposal_dir = create_proposal(tmp_path, valid_tasks_data, ["T1-01.md", "T2-01.md"], dir_name="2026-07-23")
+    result = run_validator(proposal_dir)
+    assert result.returncode == 0
+    assert "VALIDATION: PASS" in result.stdout
+
+def test_night_mismatches_directory_name(tmp_path, valid_tasks_data):
+    valid_tasks_data["night"] = "2026-07-21"
+    proposal_dir = create_proposal(tmp_path, valid_tasks_data, ["T1-01.md", "T2-01.md"], dir_name="2026-07-23")
+    result = run_validator(proposal_dir)
+    assert result.returncode == 1
+    assert "VALIDATION: FAIL" in result.stdout
+    assert "does not match proposal directory name" in result.stdout
+
+def test_night_mismatch_ignored_for_non_date_directory(tmp_path, valid_tasks_data):
+    valid_tasks_data["night"] = "2026-07-21"
+    proposal_dir = create_proposal(tmp_path, valid_tasks_data, ["T1-01.md", "T2-01.md"], dir_name="2026-07-23.archived")
+    result = run_validator(proposal_dir)
+    assert result.returncode == 0
+    assert "VALIDATION: PASS" in result.stdout

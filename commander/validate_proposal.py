@@ -40,9 +40,17 @@ def validate_proposal(proposal_dir_str):
         errors.append(f"tasks.yml is missing required keys: {', '.join(missing_keys)}")
 
     night = data.get("night")
+    is_night_valid = False
     if night is not None:
         if not isinstance(night, str) or not re.match(r"^\d{4}-\d{2}-\d{2}$", night):
             errors.append(f"Invalid night format: {night}. Must be YYYY-MM-DD.")
+        else:
+            is_night_valid = True
+
+    dir_name = proposal_dir.name
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", dir_name) and is_night_valid:
+        if night != dir_name:
+            errors.append(f"night '{night}' does not match proposal directory name '{dir_name}'")
 
     for turn in ["turn1", "turn2"]:
         tasks = data.get(turn)
