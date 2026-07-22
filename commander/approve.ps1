@@ -118,7 +118,7 @@ $dstT2 = ".nightly\prompts\" + $Night + "-T2-01.md"
 foreach ($dst in @($dstT1, $dstT2)) {
     if (Test-Path $dst) {
         $obsolete = $dst + ".obsolete"
-        Rename-Item $dst $obsolete -Force
+        Move-Item $dst $obsolete -Force
         Write-Ok ("moved existing to: " + $obsolete)
     }
 }
