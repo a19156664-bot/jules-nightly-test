@@ -136,7 +136,7 @@ Write-Ok ($dstT2 + " created")
 # ---------------------------------------------------------------- Phase 3: git commit and push
 Write-Step "Phase 3: git commit and push"
 
-git add .nightly/tasks.yml .nightly/prompts/ commander/proposals/ | Out-Null
+git add .nightly/tasks.yml $dstT1 $dstT2 (Join-Path "commander/proposals" $Night) | Out-Null
 
 # Read task titles via a temp Python script (avoid PowerShell here-string quirks).
 $python = "C:\Users\user\AppData\Local\Programs\Python\Python313\python.exe"
