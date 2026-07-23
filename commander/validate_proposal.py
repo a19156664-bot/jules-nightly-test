@@ -52,6 +52,8 @@ def validate_proposal(proposal_dir_str):
         if night != dir_name:
             errors.append(f"night '{night}' does not match proposal directory name '{dir_name}'")
 
+    seen_ids = set()
+
     for turn in ["turn1", "turn2"]:
         tasks = data.get(turn)
         if tasks is not None:
@@ -64,7 +66,18 @@ def validate_proposal(proposal_dir_str):
                     errors.append(f"Task at index {i} in {turn} is not a dictionary")
                     continue
 
-                task_id = task.get("id", f"unknown at index {i}")
+                actual_task_id = task.get("id")
+                if isinstance(actual_task_id, str):
+                    expected_prefix = f"T{turn[-1]}-"
+                    if not actual_task_id.startswith(expected_prefix):
+                        errors.append(f"Task {actual_task_id} in {turn} has id that does not match turn prefix '{expected_prefix}'")
+
+                    if actual_task_id in seen_ids:
+                        errors.append(f"Duplicate task id across proposal: {actual_task_id}")
+                    else:
+                        seen_ids.add(actual_task_id)
+
+                task_id = actual_task_id if actual_task_id is not None else f"unknown at index {i}"
 
                 # Check required task fields
                 required_task_keys = {"id", "title", "risk", "paths", "prompt_file"}
