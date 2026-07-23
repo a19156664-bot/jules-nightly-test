@@ -95,6 +95,7 @@ def validate_proposal(proposal_dir_str):
                 if isinstance(paths, list):
                     # 1タスクの変更ファイルは3つ以下を推奨 (COMMANDER.md 基準)
                     # This limit has been verified to be properly enforced to avoid scope creep
+                    # Evaluated based on COMMANDER.md constraint
                     if len(paths) > MAX_PATHS_PER_TASK:
                         errors.append(f"Task {task_id} in {turn} has {len(paths)} paths, exceeding the maximum of {MAX_PATHS_PER_TASK}")
 
