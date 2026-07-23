@@ -286,6 +286,20 @@ def merged_task_ids(branch: str) -> set:
     return ids
 
 
+def launched_task_ids(night: str) -> set:
+    """観測ログ由来の「投入済み」タスクID集合。
+    PR がまだ作られていない時間帯(投入直後)を埋めるための第二の根拠。
+    ログ不在なら空集合を返し、判定は PR 状態のみに委ねる。"""
+    ids = set()
+    for name in ("turn1.json", "turn2.json"):
+        entry = gh_get_json(LOGS_BRANCH, log_path(night, name))
+        items = entry.get("results") if isinstance(entry, dict) else entry
+        for e in items or []:
+            if isinstance(e, dict) and e.get("status") == "launched" and e.get("id"):
+                ids.add(e["id"])
+    return ids
+
+
 def pr_files(number: int) -> list:
     """[{filename, status(added/modified/removed/renamed), previous_filename}]"""
     return gh_json(["api", f"repos/{repo()}/pulls/{number}/files", "--paginate"]) or []
@@ -497,24 +511,44 @@ def cmd_start_night(_args) -> int:
         return 0
     branch = branch_name(m)
     branch_existed = gh_branch_exists(branch)
-    if branch_existed:
-        turn1_log = gh_get_json(LOGS_BRANCH, log_path(m["night"], "turn1.json"))
-        if turn1_log is not None:
-            add_summary(f"## ⏭ {branch} は既に存在し、T1投入済みです。"
-                        "やり直す場合はブランチを削除して tasks.yml を再コミットしてください。")
-            return 0
-        log(f"{branch} は存在しますがT1未投入です。既存ブランチ上でT1を投入します。")
-    else:
+    if not branch_existed:
         gh_create_branch_from_main(branch)
     log(f"{'reusing' if branch_existed else 'created'} branch {branch}")
-    results = launch_tasks(m, m["turn1"], branch)
+
+    # 冪等性ガード: 既に投入済み/マージ済みのタスクは再投入しない。
+    # ブランチの存在有無に依存しないこと。ブランチ削除でガードが
+    # リセットされると同一タスクの無限再投入を招く(07-23 の T2 事故と同型)。
+    # 根拠は2つ: PR状態(マージ済み)と観測ログ(投入済み)。
+    # ログは投入直後で PR がまだ無い時間帯を埋める第二の根拠。
+    already = merged_task_ids(branch) | launched_task_ids(m["night"])
+    launch, skipped = [], []
+    for t in m["turn1"]:
+        if t["id"] in already:
+            skipped.append({"id": t["id"], "status": "skipped",
+                            "reason": "既に投入済み/マージ済み(再投入を抑止)"})
+        else:
+            launch.append(t)
+
+    if not launch:
+        add_summary("## ⏭ T1 は全タスクが投入済み/マージ済みのため何もしません。\n\n"
+                    + results_table(skipped))
+        return 0
+
+    results = launch_tasks(m, launch, branch) + skipped
+    # fail-closed: ログが書けない状態で投入を続けると冪等性ガードの
+    # 根拠が欠落し、次回の再投入を検知できなくなる(R5)。異常として扱う。
     try:
         gh_put_file(LOGS_BRANCH, log_path(m["night"], "turn1.json"),
                     json.dumps(results, ensure_ascii=False, indent=2),
                     f"nightly: turn1 launch log {m['night']}")
     except RuntimeError as e:
-        log(f"::warning::turn1 ログの書き込みに失敗しました(続行します): {e}")
-    failed = [r for r in results if r["status"] != "launched"]
+        log(f"::error::turn1 ログの書き込みに失敗しました: {e}")
+        add_summary(f"## ❌ T1を投入しましたが起動ログを保存できませんでした。\n\n"
+                    f"冪等性ガードの根拠が欠落しています。次回起動前に "
+                    f"`{LOGS_BRANCH}` への書き込み経路を確認してください。\n\n"
+                    + results_table(results))
+        return 1
+    failed = [r for r in results if r["status"] not in ("launched", "skipped")]
     add_summary(f"## 🌙 第1ターン開始 (branch: `{branch}`)\n\n{results_table(results)}"
                 + ("\n\n⚠️ 投入失敗があります。翌朝確認してください。" if failed else ""))
     return 0
@@ -531,15 +565,18 @@ def cmd_turn_switch(_args) -> int:
         return 0
 
     merged = merged_task_ids(branch)
+    # PR がまだ作られていない投入直後を埋めるため、観測ログ由来の
+    # 「投入済み」も再投入抑止の根拠に加える(T1 と対称)。
+    already = merged | launched_task_ids(m["night"])
     launch, skipped = [], []
     for t in m["turn2"]:
-        # 冪等性ガード: 既にマージ済みのタスクは再投入しない。
+        # 冪等性ガード: 既にマージ済み/投入済みのタスクは再投入しない。
         # dispatch-after-merge は integration/nightly-* への全マージで
         # turn-switch を起動するため、T2 のマージ自体が再起動を招く。
         # このガードが無いと同一タスクが無限に再投入される(07-23 事故)。
-        if t["id"] in merged:
+        if t["id"] in already:
             skipped.append({"id": t["id"], "status": "skipped",
-                            "reason": "既にマージ済み(再投入を抑止)"})
+                            "reason": "既に投入済み/マージ済み(再投入を抑止)"})
             continue
         deps = set(t.get("depends_on", []) or [])
         missing = sorted(deps - merged)
@@ -550,13 +587,19 @@ def cmd_turn_switch(_args) -> int:
             launch.append(t)
 
     results = launch_tasks(m, launch, branch) + skipped
+    # fail-closed: 投入したのにログが残らないと次回の再投入を検知できない(R5)。
     try:
         gh_put_file(LOGS_BRANCH, log_path(m["night"], "turn2.json"),
                     json.dumps({"merged_t1": sorted(merged), "results": results},
                                ensure_ascii=False, indent=2),
                     f"nightly: turn2 switch log {m['night']}")
     except RuntimeError as e:
-        log(f"::warning::turn2 ログの書き込みに失敗しました(続行します): {e}")
+        log(f"::error::turn2 ログの書き込みに失敗しました: {e}")
+        add_summary(f"## ❌ T2の処理は完了しましたが起動ログを保存できませんでした。\n\n"
+                    f"冪等性ガードの根拠が欠落しています。次回起動前に "
+                    f"`{LOGS_BRANCH}` への書き込み経路を確認してください。\n\n"
+                    + results_table(results))
+        return 1
     add_summary(f"## 🔄 ターン切替 (T1マージ済: {', '.join(sorted(merged)) or 'なし'})\n\n"
                 + results_table(results))
     return 0
