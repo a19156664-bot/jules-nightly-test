@@ -1,0 +1,27 @@
+night: "2026-07-24"
+turn1:
+  - id: "T1-01"
+    title: "validate_proposal に task id の turn 整合と一意性検査を追加"
+    risk: "low"
+    paths:
+      - "commander/validate_proposal.py"
+      - "tests/test_validate_proposal.py"
+    prompt_file: ".nightly/prompts/2026-07-24-T1-01.md"
+turn2:
+  - id: "T2-01"
+    title: "validate_proposal に 1タスクあたりの paths 数上限(3)検査を追加"
+    risk: "low"
+    paths:
+      - "commander/validate_proposal.py"
+      - "tests/test_validate_proposal.py"
+    prompt_file: ".nightly/prompts/2026-07-24-T2-01.md"
+test_paths:
+  - "tests/"
+protected_paths:
+  - ".nightly/tasks.yml"
+  - ".nightly/prompts/"
+  - ".nightly/scripts/nightly.py"
+  - ".nightly/ci.sh"
+  - ".nightly/logs/"
+  - ".nightly/reports/"
+  - ".github/"
