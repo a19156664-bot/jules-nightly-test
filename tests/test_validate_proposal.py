@@ -67,6 +67,7 @@ def test_valid_proposal(tmp_path, valid_tasks_data):
     assert "VALIDATION: PASS" in result.stdout
 
 def test_task_paths_exceeds_maximum(tmp_path, valid_tasks_data):
+    # Verify that paths exceeding the maximum of 3 will fail validation
     valid_tasks_data["turn1"][0]["paths"] = ["path1.py", "path2.py", "path3.py", "path4.py"]
     proposal_dir = create_proposal(tmp_path, valid_tasks_data, ["T1-01.md", "T2-01.md"])
     result = run_validator(proposal_dir)
