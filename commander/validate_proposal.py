@@ -8,6 +8,7 @@ from pathlib import Path
 PROTECTED_PATHS = [".nightly/", ".github/"]
 EXACT_PROTECTED_PATHS = ["AGENTS.md"]
 VALID_RISKS = {"low", "medium", "high"}
+MAX_PATHS_PER_TASK = 3
 
 def validate_proposal(proposal_dir_str):
     errors = []
@@ -91,6 +92,9 @@ def validate_proposal(proposal_dir_str):
 
                 paths = task.get("paths", [])
                 if isinstance(paths, list):
+                    if len(paths) > MAX_PATHS_PER_TASK:
+                        errors.append(f"Task {task_id} in {turn} has {len(paths)} paths, exceeding the maximum of {MAX_PATHS_PER_TASK}")
+
                     for path in paths:
                         if not isinstance(path, str):
                             errors.append(f"Task {task_id} in {turn} contains a non-string path")
