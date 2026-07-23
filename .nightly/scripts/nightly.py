@@ -521,6 +521,14 @@ def cmd_turn_switch(_args) -> int:
     merged = merged_task_ids(branch)
     launch, skipped = [], []
     for t in m["turn2"]:
+        # 冪等性ガード: 既にマージ済みのタスクは再投入しない。
+        # dispatch-after-merge は integration/nightly-* への全マージで
+        # turn-switch を起動するため、T2 のマージ自体が再起動を招く。
+        # このガードが無いと同一タスクが無限に再投入される(07-23 事故)。
+        if t["id"] in merged:
+            skipped.append({"id": t["id"], "status": "skipped",
+                            "reason": "既にマージ済み(再投入を抑止)"})
+            continue
         deps = set(t.get("depends_on", []) or [])
         missing = sorted(deps - merged)
         if missing:
