@@ -272,6 +272,108 @@ start-night 実行時、`.nightly/logs/<night>-turn1.json` への PUT が branch
 フローは継続するため運用に支障はないが、**観測データが欠損する**。10夜目・11夜目とも同じ warning を確認。
 X-1 で branch protection の除外設定、または PUT 先の変更が必要。
 
+### 65. turn-switch の冪等性欠如による T2 無限再投入ループ（07-23 事故・最重要）
+
+11夜目（2026-07-24）で、同一タスク T2-01 が **7回投入され、うち6回が auto-merge された**
+（PR #32〜#37）。ダッシュボードは終始「正常運転中（緑）/ Error Count 0」で、
+CI も pr_checker も全て通過していた。**検知層が一つも作動しないサイレントな暴走**。
+
+#### ループの構造
+
+```
+T2 の PR が integration/nightly-* にマージ
+  → dispatch-after-merge が発火（条件: base.ref が 'integration/nightly-' で始まる）
+  → turn-switch を workflow_dispatch で起動（force_date を base ref から復元）
+  → cmd_turn_switch が turn2 のタスクを投入
+  → Jules が PR 作成 → auto-merge → 先頭に戻る
+```
+
+`dispatch-after-merge` の発火条件は「integration/nightly-* への PR がマージされたこと」だけで、
+**T1 のマージも T2 のマージも区別しない**。つまり T2 のマージが次の T2 投入を呼ぶ自己再帰構造。
+
+#### 真因: cmd_turn_switch に冪等性ガードが無い
+
+修正前のコードは依存関係しか見ていなかった。
+
+```python
+merged = merged_task_ids(branch)
+for t in m["turn2"]:
+    deps = set(t.get("depends_on", []) or [])
+    missing = sorted(deps - merged)
+    if missing:
+        skipped.append(...)      # 依存未充足 → スキップ
+    else:
+        launch.append(t)         # ← 「既に投入済み/マージ済み」の判定が無い
+```
+
+`cmd_start_night` は turn1 ログの有無で投入判定している（知見27）のに、
+`cmd_turn_switch` には同等のガードが**実装されていなかった**。設計の非対称性。
+
+#### 10夜目から潜在していた
+
+turn-switch の実行履歴を確認したところ、**10夜目（07-22）も workflow_dispatch が3回**起動していた
+（PR は #29 #30 の2つのみ）。3周目に Jules が PR を作らなかったため表面化しなかっただけで、
+**ループ自体は10夜目から発生していた**。11夜目は Jules が毎回 PR を作ったため顕在化した。
+
+「一度うまくいった」は「構造的に正しい」を意味しない。10夜目の完全連鎖成功は、
+偶然ループが空回りしただけだった。
+
+#### Jules の挙動が事故を可視化した
+
+#33〜#37 のコミットメッセージが実態を語っている。
+
+```
+#36  Add trivial comments to generate a diff for already implemented T2-01
+#35  Add paths limit validation to validate_proposal
+#34  Add comment to validate_proposal.py to create diff
+#33  Add comment for path length check
+#32  [T2-01] Add paths count limit check to validate_proposal   ← 本来の実装
+```
+
+Jules は「既に実装済み」と認識していた。しかし投入され続けたため、
+**空の差分では PR が作れないので、無意味なコメントを追加して形だけの PR を作った**。
+R1（LLM同士の共謀的盲点）の実例。pr_checker も CI も、コメント追加は無害なので通してしまう。
+**「無害だが無意味な変更」は既存の防御層をすり抜ける。**
+
+#### 修正（3758e64）
+
+`cmd_turn_switch` の turn2 ループ先頭に冪等性ガードを追加。
+
+```python
+for t in m["turn2"]:
+    # 冪等性ガード: 既にマージ済みのタスクは再投入しない。
+    if t["id"] in merged:
+        skipped.append({"id": t["id"], "status": "skipped",
+                        "reason": "既にマージ済み(再投入を抑止)"})
+        continue
+    deps = set(t.get("depends_on", []) or [])
+```
+
+`merged_task_ids(branch)` の戻り値をそのまま利用するため、新規 API 呼び出しは不要。
+実証: 修正後に同じ workflow_dispatch を手動実行し、
+`{"id": "T2-01", "status": "skipped", "reason": "既にマージ済み(再投入を抑止)"}` を確認。
+
+#### 事故対応の手順（再発時のため）
+
+1. `gh run list` で連鎖の構造を特定（EVENT 列が workflow_dispatch の連続に注目）
+2. **輪を物理的に切る**: `gh workflow disable <auto-merge ID>` と `<dispatch-after-merge ID>`
+3. Jules 管理画面の In progress で走行中セッションを Pause session
+4. 原因確定 → 修正 → テスト → push
+5. 修正の実証（無効化したまま手動 dispatch し、スキップされることを確認）
+6. `gh workflow enable` で再有効化
+7. 残った PR を close
+
+#### X-1（24時間稼働）への含意
+
+- **サイクルを24倍速にする前に、1周で正しく止まることの保証が必要**。暴走も24倍速になる
+- ダッシュボードに「同一タスクが N 回以上投入されたら警告」の検知が無い。
+  緑のまま暴走できる状態は、層1の観測設計の穴
+- `dispatch-after-merge` の発火条件（integration/* への全マージ）は粗すぎる。
+  T1 のマージのみを対象にするか、turn 状態を見る設計に変えるべき
+- 冪等性は turn-switch だけの問題ではない。**全ての自動起動経路について
+  「二度呼ばれても安全か」を点検する必要がある**
+
+
 ## 運用チェックリスト
 
 ### night 投入時の確認事項
