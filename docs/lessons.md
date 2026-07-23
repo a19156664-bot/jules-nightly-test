@@ -136,6 +136,141 @@ commander.ps1 には start-night（夜の切り替え）ロジックがない。
 integration ブランチの成果（Jules の PR マージ先）は自動では main に反映されない。夜の完了後に手動で `git merge origin/integration/nightly-YYYYMMDD` → main push が必要。
 
 ---
+## 状態管理 / エンコーディング関連（07-23 追加）
+
+### 55. state.yml を PowerShell の Set-Content で書くと状態が全消失する（07-23 発見・最重要）
+PowerShell の `Set-Content -Encoding UTF8` は **BOM 付き UTF-8** で保存する。`StateManager.load()` は
+`open(path, encoding="utf-8")` で読むため BOM がパースエラーを起こし、以下の連鎖でサイレントに状態が消える。
+
+```
+Set-Content -Encoding UTF8 で state.yml を編集
+  → 先頭に BOM (EF BB BF) が混入
+  → load() の yaml.safe_load が例外
+  → except: return get_default_state()   ← 例外を握りつぶす
+  → 次の update()（record_wakeup 等）が save() を実行
+  → デフォルト状態がファイルに上書きされる = current_night / turn / last_action が全消失
+```
+
+30分ごとのタスクスケジューラが `--record-wakeup` を呼ぶため、**編集した数分後に勝手に消える**。
+エラーも警告も出ないため、原因の特定が極めて困難。
+
+**運用ルール: `state.yml` は `StateManager.update()` 経由でのみ編集する。**
+
+```powershell
+# 正: 司令塔自身と同じ書き込み経路（yaml.dump / BOM なし）
+python -c "from commander.state_manager import StateManager as S; S().update({'current_night':'2026-07-24'})"
+
+# 誤: BOM が混入し、次の wakeup で状態が消える
+(Get-Content commander\state.yml -Raw) -replace ... | Set-Content commander\state.yml -Encoding UTF8
+```
+
+### 56. load() の `except: return get_default_state()` は fail-silent（07-23 発見）
+知見55 の根本原因。`state_manager.py` の `load()` は、パース失敗時に例外を握りつぶしてデフォルト状態を返す。
+これは本システムの設計哲学である **fail-closed に反する fail-silent** であり、
+「壊れた状態を検知して止まる」のではなく「壊れた事実を隠して正常なふりをする」挙動になっている。
+
+X-1 での修正候補:
+- `encoding="utf-8-sig"` にして BOM を許容する
+- パース失敗時は例外を投げて停止する（あるいは stop_reason を立てる）
+- `save()` の前に「読み込んだ state が空/デフォルトなら書き込まない」ガードを入れる
+
+### 57. state の確認は必ず YAML パーサ経由で行う（07-23 発見。知見28 の強化）
+`Select-String -Pattern "turn"` は `last_action.detail` の**本文テキストに含まれる文字列**まで拾う。
+07-23 に、実際には `turn: null` だったにもかかわらず、detail 内の「turn=complete かつ翌夜…」という
+報告文が引っかかり、`turn: complete` が存在すると誤認して調査が30分迷走した。
+
+```powershell
+# 正: パーサが解釈した実際の値を見る
+python -c "import yaml; d=yaml.safe_load(open('commander/state.yml',encoding='utf-8')); print(repr(d.get('turn')))"
+
+# 誤: 本文中の文字列を拾って誤認する
+Get-Content commander\state.yml | Select-String -Pattern "turn"
+```
+
+トップレベルキーの一覧を見たい場合は `print(list(d.keys()))` が確実。
+
+### 58. state.yml の turn フィールドに書き手が存在しない（07-23 発見）
+`state.yml` の `turn` は読み手が3箇所（`--check-turn-due` / commander.ps1 の Stage 0 ゲート / ダッシュボード表示）
+ある一方、**値を書き込むコードがリポジトリ内に存在しない**（`update({"turn": ...})` が一箇所もない）。
+`nightly.py` に頻出する `turn1` / `turn2` は `.nightly/tasks.yml` のタスク区分であり、`state.yml` の `turn` とは別物。
+
+現状は人間の手動更新に暗黙依存している。`--check-turn-due` は `turn == "turn1"` を期待しているが
+誰も `turn1` を書かないため、**常に False を返す**（実質デッドコード）。
+X-1 では turn のライフサイクル（誰がいつ何を書くか）を明示的に設計する必要がある。
+
+### 59. commander.ps1 の Stage 0 ゲートは turn が空だと静かに空振りする（07-23 発見。知見52 の系列）
+commander.ps1 の Stage 0 は次の複合条件で `no-work` として `exit 0` する。
+
+```powershell
+if ($openPRs -eq 0 -and $turnDue -like "False*" -and $turn -notlike "complete*")
+```
+
+`turn` が `null`（空文字列）だと `complete*` に一致しないため条件が成立し、
+**LLM を呼ばずに正常終了する**。ログファイルも作られないため、コンソール表示だけでは
+「動いたが仕事がなかった」のか「壊れて止まった」のか区別できない。
+
+空振りの切り分け手順:
+1. `commander\logs\commander-*.log` の最新タイムスタンプを見る（無ければ Stage 1 未到達）
+2. `--can-call-llm` で予算ゲートを確認（`False|理由` が返る）
+3. パーサ経由で `turn` / `stop_reason` / `error_count` を確認（知見57）
+
+---
+
+## 承認フロー関連（07-23 追加）
+
+### 60. approve.ps1 の前に proposal のコミットが必要（07-23 発見）
+司令塔が生成した `commander/proposals/<night>/` は untracked のまま残るため、
+approve.ps1 の Phase 0（working tree clean 検査）で停止する。
+Phase 0 は `*.bak-` / `*.obsolete` は除外するが、proposal ディレクトリは除外しない。
+
+正しい順序:
+```
+1. commander.ps1 発火 → proposals/<night>/ 生成
+2. git add <3ファイルを明示列挙> → commit   ← このステップが必要
+3. approve.ps1 -Night <night>
+```
+
+approve.ps1 側で proposal コミットまで面倒を見るか、手順として明文化するかは要検討（X-1 候補）。
+
+### 61. approve.ps1 は -ExecutionPolicy Bypass -File で呼ぶ（07-23 確認。知見32 の再確認）
+`.\commander\approve.ps1 -Night ...` は実行ポリシー制限で `UnauthorizedAccess` になる。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File commander\approve.ps1 -Night 2026-07-24
+```
+
+commander.ps1 と同じ呼び方。Phase 4 の y/n プロンプトもこの形式で正常に動作する。
+
+### 62. approve.ps1 v4 初本番投入の結果（07-23）
+11夜目（2026-07-24）で初めて本番投入し、Phase 0〜5 が設計どおり完走した。
+- Phase 0 の fail-closed が proposal 未コミットを正しく検出（知見60）
+- Phase 1 のバックアップは `.nightly\tasks.yml.bak-before-<night>-<timestamp>` 形式
+- Phase 4 の night 不一致検出 → `force_date` 付き dispatch の提案が正しく機能
+- 人間の作業は「y を1回入力」のみ。R3（人間がボトルネック）の緩和を実運用で確認
+
+---
+
+## 未解決事項の実証（07-23）
+
+### 63. morning-report は integration → main のマージを行わない（07-23 実証。知見37 の確認）
+10夜目完了の翌朝、main は前日の `c6fff24` のままで、`integration/nightly-20260723` の成果
+（PR #29 / #30）は未反映だった。**morning-report は成果報告のみで実マージはしない**ことが確定。
+課題F（integration → main の統合自動化）は未解決のまま。手動マージの手順:
+
+```powershell
+git fetch origin
+git log --oneline origin/integration/nightly-YYYYMMDD..origin/main   # 分岐確認
+git merge --no-ff origin/integration/nightly-YYYYMMDD -m "merge: Nth night into main"
+git push origin main
+```
+
+main が先行している場合（approve.ps1 のコミット等）は ff-only では失敗するため `--no-ff` を使う。
+
+### 64. turn1 ログの PUT 失敗は継続中（07-23 再観測。R5 / 知見8）
+start-night 実行時、`.nightly/logs/<night>-turn1.json` への PUT が branch protection で失敗し、
+`turn1 ログの書き込みに失敗しました(続行します)` の warning が出る。
+フローは継続するため運用に支障はないが、**観測データが欠損する**。10夜目・11夜目とも同じ warning を確認。
+X-1 で branch protection の除外設定、または PUT 先の変更が必要。
 
 ## 運用チェックリスト
 
@@ -148,6 +283,12 @@ integration ブランチの成果（Jules の PR マージ先）は自動では 
 ### 夜間完了後の作業
 1. ダッシュボードで信号機・エラーカウント確認
 2. PR の精読（初回は全件、定着後は抜き打ち）
-3. integration → main のマージ
+3. integration → main のマージ（手動。知見63）
 4. 司令塔の Row 7 実行結果（proposals/ の生成）確認
-5. proposals/ の承認 → .nightly/ への反映
+5. proposal を git commit（ファイル明示列挙。知見60）
+6. approve.ps1 -Night <night> で承認（知見61）
+
+### state.yml を触るときの鉄則
+1. 編集は StateManager.update() 経由のみ（Set-Content 禁止。知見55）
+2. 確認は YAML パーサ経由（Select-String は誤認する。知見57）
+3. 触る前にバックアップ（Copy-Item で退避）
