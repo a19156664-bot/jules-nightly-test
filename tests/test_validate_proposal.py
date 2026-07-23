@@ -66,6 +66,22 @@ def test_valid_proposal(tmp_path, valid_tasks_data):
     assert result.returncode == 0
     assert "VALIDATION: PASS" in result.stdout
 
+def test_task_id_turn_prefix_mismatch(tmp_path, valid_tasks_data):
+    valid_tasks_data["turn2"][0]["id"] = "T1-99"
+    proposal_dir = create_proposal(tmp_path, valid_tasks_data, ["T1-01.md", "T2-01.md"])
+    result = run_validator(proposal_dir)
+    assert result.returncode == 1
+    assert "VALIDATION: FAIL" in result.stdout
+    assert "- Task T1-99 in turn2 has id that does not match turn prefix 'T2-'" in result.stdout
+
+def test_duplicate_task_id_across_proposal(tmp_path, valid_tasks_data):
+    valid_tasks_data["turn2"][0]["id"] = "T1-01"
+    proposal_dir = create_proposal(tmp_path, valid_tasks_data, ["T1-01.md", "T2-01.md"])
+    result = run_validator(proposal_dir)
+    assert result.returncode == 1
+    assert "VALIDATION: FAIL" in result.stdout
+    assert "- Duplicate task id across proposal: T1-01" in result.stdout
+
 def test_missing_required_section_in_prompt(tmp_path, valid_tasks_data):
     proposal_dir = create_proposal(
         tmp_path,
