@@ -50,6 +50,12 @@ except Exception:  # フォールバック(固定オフセット)
 
 MANIFEST_PATH = ".nightly/tasks.yml"
 JULES_API = "https://jules.googleapis.com/v1alpha"
+# 観測ログの保管先。統合ブランチは branch protection(ci必須)により
+# Contents API からの直接 PUT が HTTP 409 で拒否されるため(R5)、
+# 保護のかからないデータ専用ブランチに分離する。
+# ここに書き込んでも ci.yml(integration/nightly-** のみ)は起動しない。
+LOGS_BRANCH = "ops/nightly-logs"
+LOGS_DIR = "logs"
 TASK_ID_RE = re.compile(r"^\[(T[12]-\d{2})\]")
 # Jules に絶対に触らせないパス(マニフェストの protected_paths に加えて常時適用)
 ALWAYS_PROTECTED = [".github/**", ".nightly/**", "AGENTS.md"]
@@ -121,6 +127,12 @@ def load_manifest(path: str = MANIFEST_PATH) -> dict:
 
 def branch_name(m: dict) -> str:
     return f"integration/nightly-{m['night'].replace('-', '')}"
+
+
+def log_path(night: str, name: str) -> str:
+    """観測ログのパス。サイクル識別子をディレクトリに分離しているため、
+    識別子の形式が変わってもディレクトリ名が変わるだけで構造は無傷(X-1)。"""
+    return f"{LOGS_DIR}/{night}/{name}"
 
 
 def glob_match(path: str, pattern: str) -> bool:
@@ -486,7 +498,7 @@ def cmd_start_night(_args) -> int:
     branch = branch_name(m)
     branch_existed = gh_branch_exists(branch)
     if branch_existed:
-        turn1_log = gh_get_json(branch, f".nightly/logs/{m['night']}-turn1.json")
+        turn1_log = gh_get_json(LOGS_BRANCH, log_path(m["night"], "turn1.json"))
         if turn1_log is not None:
             add_summary(f"## ⏭ {branch} は既に存在し、T1投入済みです。"
                         "やり直す場合はブランチを削除して tasks.yml を再コミットしてください。")
@@ -497,7 +509,7 @@ def cmd_start_night(_args) -> int:
     log(f"{'reusing' if branch_existed else 'created'} branch {branch}")
     results = launch_tasks(m, m["turn1"], branch)
     try:
-        gh_put_file(branch, f".nightly/logs/{m['night']}-turn1.json",
+        gh_put_file(LOGS_BRANCH, log_path(m["night"], "turn1.json"),
                     json.dumps(results, ensure_ascii=False, indent=2),
                     f"nightly: turn1 launch log {m['night']}")
     except RuntimeError as e:
@@ -539,7 +551,7 @@ def cmd_turn_switch(_args) -> int:
 
     results = launch_tasks(m, launch, branch) + skipped
     try:
-        gh_put_file(branch, f".nightly/logs/{m['night']}-turn2.json",
+        gh_put_file(LOGS_BRANCH, log_path(m["night"], "turn2.json"),
                     json.dumps({"merged_t1": sorted(merged), "results": results},
                                ensure_ascii=False, indent=2),
                     f"nightly: turn2 switch log {m['night']}")
@@ -653,8 +665,8 @@ def cmd_watch(_args) -> int:
         add_summary(f"## ⏭ {branch} が存在しないため監視をスキップします")
         return 0
 
-    turn1_log = gh_get_json(branch, f".nightly/logs/{m['night']}-turn1.json")
-    turn2_log = gh_get_json(branch, f".nightly/logs/{m['night']}-turn2.json")
+    turn1_log = gh_get_json(LOGS_BRANCH, log_path(m["night"], "turn1.json"))
+    turn2_log = gh_get_json(LOGS_BRANCH, log_path(m["night"], "turn2.json"))
     if turn1_log is None and turn2_log is None:
         add_summary(f"## ⏭ 起動ログ({m['night']}-turn1/2.json)がまだありません。監視をスキップします。")
         return 0
@@ -673,7 +685,7 @@ def cmd_watch(_args) -> int:
     payload = {"checked_at": datetime.datetime.now(JST).isoformat(),
                "sessions": records}
     try:
-        gh_put_file(branch, f".nightly/logs/{m['night']}-sessions.json",
+        gh_put_file(LOGS_BRANCH, log_path(m["night"], "sessions.json"),
                     json.dumps(payload, ensure_ascii=False, indent=2),
                     f"nightly: session watch log {m['night']}")
     except RuntimeError as e:
@@ -694,7 +706,7 @@ def cmd_report(_args) -> int:
 
     # 監視ログ(session-watchdog が生成)があれば読み込む。無ければ従来動作のまま。
     sessions_by_task = {}
-    watch_log = gh_get_json(branch, f".nightly/logs/{m['night']}-sessions.json")
+    watch_log = gh_get_json(LOGS_BRANCH, log_path(m["night"], "sessions.json"))
     if isinstance(watch_log, dict):
         for s in watch_log.get("sessions") or []:
             if isinstance(s, dict) and s.get("task"):
