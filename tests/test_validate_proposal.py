@@ -66,6 +66,21 @@ def test_valid_proposal(tmp_path, valid_tasks_data):
     assert result.returncode == 0
     assert "VALIDATION: PASS" in result.stdout
 
+def test_task_paths_exceeds_maximum(tmp_path, valid_tasks_data):
+    valid_tasks_data["turn1"][0]["paths"] = ["path1.py", "path2.py", "path3.py", "path4.py"]
+    proposal_dir = create_proposal(tmp_path, valid_tasks_data, ["T1-01.md", "T2-01.md"])
+    result = run_validator(proposal_dir)
+    assert result.returncode == 1
+    assert "VALIDATION: FAIL" in result.stdout
+    assert "Task T1-01 in turn1 has 4 paths, exceeding the maximum of 3" in result.stdout
+
+def test_task_paths_at_maximum_allowed(tmp_path, valid_tasks_data):
+    valid_tasks_data["turn1"][0]["paths"] = ["path1.py", "path2.py", "path3.py"]
+    proposal_dir = create_proposal(tmp_path, valid_tasks_data, ["T1-01.md", "T2-01.md"])
+    result = run_validator(proposal_dir)
+    assert result.returncode == 0
+    assert "VALIDATION: PASS" in result.stdout
+
 def test_task_id_turn_prefix_mismatch(tmp_path, valid_tasks_data):
     valid_tasks_data["turn2"][0]["id"] = "T1-99"
     proposal_dir = create_proposal(tmp_path, valid_tasks_data, ["T1-01.md", "T2-01.md"])
