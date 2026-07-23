@@ -8,6 +8,7 @@ from pathlib import Path
 PROTECTED_PATHS = [".nightly/", ".github/"]
 EXACT_PROTECTED_PATHS = ["AGENTS.md"]
 VALID_RISKS = {"low", "medium", "high"}
+# Maximum allowed paths per task as per COMMANDER.md guidelines
 MAX_PATHS_PER_TASK = 3
 
 def validate_proposal(proposal_dir_str):
